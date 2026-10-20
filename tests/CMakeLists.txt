@@ -9,7 +9,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(pd_director_tests CXX)
+  project(pd_director_tests C CXX)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -35,6 +35,12 @@ add_library(
 )
 target_include_directories(pd_director PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
+# Pure-C palette set model (libobs/Qt-free) exercised by test_palette.cpp.
+set(PD_PALETTE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../src/palette)
+
+add_library(pd_palette STATIC ${PD_PALETTE_ROOT}/palette.c)
+target_include_directories(pd_palette PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
 add_executable(
   pd_director_tests
   doctest_main.cpp
@@ -45,14 +51,16 @@ add_executable(
   test_commands.cpp
   test_silence.cpp
   test_determinism.cpp
+  test_palette.cpp
   fixtures/gen_fixtures.cpp
 )
-target_link_libraries(pd_director_tests PRIVATE pd_director)
+target_link_libraries(pd_director_tests PRIVATE pd_director pd_palette)
 target_include_directories(
   pd_director_tests
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/director
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/doctest
 )

@@ -42,7 +42,7 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.c src/palette-lock-filter.c src/dock/palette-director-dock.cpp
+  PRIVATE src/plugin-main.c src/palette-lock-filter.c src/palette/palette.c src/dock/palette-director-dock.cpp
 )
 
 if(HAVE_FRONTEND_API)

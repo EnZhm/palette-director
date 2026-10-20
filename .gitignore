@@ -9,6 +9,8 @@
 !/src
 !/tests
 !/third_party
+!/tools
+/tools/parity/check
 !.clang-format
 !.gersemirc
 !.gitignore

@@ -54,3 +54,13 @@ if(ENABLE_QT)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# --- Palette Director P3: offline Director unit tests (pure C++, no libobs/Qt) ---
+# Kept in an isolated guarded block so it does not collide with other top-level edits.
+# Build with: cmake -S . -B build-tests -DPD_BUILD_TESTS=ON
+# (Alternatively build the self-contained project directly: cmake -S tests -B build-tests)
+option(PD_BUILD_TESTS "Build the offline Director unit tests" OFF)
+if(PD_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()

@@ -99,7 +99,7 @@ bool pl_add_palette(struct pl_set *s, const char *name, int *out_index)
 	return true;
 }
 
-bool pl_duplicate_palette(struct pl_set *s, int index, int *out_index)
+bool pl_duplicate_palette(struct pl_set *s, int index, int *live, int *edit, int *out_index)
 {
 	if (index < 0 || index >= s->n_palettes || s->n_palettes >= PL_MAX_PALETTES)
 		return false;
@@ -115,6 +115,12 @@ bool pl_duplicate_palette(struct pl_set *s, int index, int *out_index)
 		(size_t)(s->n_palettes - index - 1) * sizeof(struct pl_palette));
 	s->palettes[index + 1] = copy;
 	s->n_palettes++;
+
+	/* live/edit follow their palette, not its position (mirror delete) */
+	if (live && *live > index)
+		(*live)++;
+	if (edit && *edit > index)
+		(*edit)++;
 
 	/* ensure unique name after insertion */
 	char uname[PL_NAME_MAX];

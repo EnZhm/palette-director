@@ -313,7 +313,7 @@ static bool btn_palette_action(obs_properties_t *props, obs_property_t *property
 		edit = idx;
 	} else if (strcmp(name, "palette.dup") == 0) {
 		int idx = -1;
-		if (!pl_duplicate_palette(&f->set, edit, &idx))
+		if (!pl_duplicate_palette(&f->set, edit, &live, &edit, &idx))
 			return false;
 		edit = idx;
 	} else if (strcmp(name, "palette.del") == 0) {
@@ -386,6 +386,26 @@ static bool on_edit_changed(void *priv, obs_properties_t *props, obs_property_t 
 	return true; /* re-bind the editor controls to the new selection */
 }
 
+static bool on_rename(void *priv, obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
+{
+	(void)props;
+	(void)property;
+	struct palette_lock_filter *f = priv;
+	int edit = f->edit_palette;
+	if (edit < 0 || edit >= f->set.n_palettes)
+		return false;
+
+	char key[64];
+	snprintf(key, sizeof(key), S_PALETTE, edit);
+	const char *newname = obs_data_get_string(settings, key);
+
+	/* enforce the unique, non-empty name rule; reject and revert on violation */
+	if (!pl_rename_palette(&f->set, edit, newname))
+		obs_data_set_string(settings, key, f->set.palettes[edit].name);
+
+	return true; /* refresh the list so it shows the (possibly reverted) name */
+}
+
 static obs_properties_t *palette_lock_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
@@ -429,7 +449,7 @@ static obs_properties_t *palette_lock_properties(void *data)
 	char key[64];
 	snprintf(key, sizeof(key), S_PALETTE, edit);
 	obs_property_t *pname = obs_properties_add_text(gpal, key, "Name", OBS_TEXT_DEFAULT);
-	obs_property_set_modified_callback2(pname, on_edit_changed, f);
+	obs_property_set_modified_callback2(pname, on_rename, f);
 
 	snprintf(key, sizeof(key), S_MODE, edit);
 	obs_property_t *pmode = obs_properties_add_list(gpal, key, "Mode", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -441,7 +461,11 @@ static obs_properties_t *palette_lock_properties(void *data)
 		char label[32];
 		snprintf(key, sizeof(key), S_COLOUR, edit, j);
 		snprintf(label, sizeof(label), "Colour %d", j + 1);
-		obs_properties_add_color(gpal, key, label);
+		obs_property_t *sw = obs_properties_add_color(gpal, key, label);
+
+		/* duotone uses only the first and last colour; dim the middle swatches */
+		if (ep->mode == PL_MODE_DUOTONE && j > 0 && j < ep->n_colours - 1)
+			obs_property_set_enabled(sw, false);
 
 		char btn[32];
 		snprintf(btn, sizeof(btn), "sw.%d.%d.up", edit, j);

@@ -83,7 +83,7 @@ void pl_palette_default(struct pl_palette *p, const char *name);
 /* palette lifecycle (return false when the operation is a no-op / rejected) */
 bool pl_name_unique(const struct pl_set *s, const char *name, int except);
 bool pl_add_palette(struct pl_set *s, const char *name, int *out_index);
-bool pl_duplicate_palette(struct pl_set *s, int index, int *out_index);
+bool pl_duplicate_palette(struct pl_set *s, int index, int *live, int *edit, int *out_index);
 bool pl_rename_palette(struct pl_set *s, int index, const char *name);
 bool pl_delete_palette(struct pl_set *s, int index, int *live, int *edit);
 void pl_move_palette(struct pl_set *s, int index, int dir, int *live, int *edit);

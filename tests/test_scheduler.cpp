@@ -42,9 +42,10 @@ TEST_CASE("random off at chance 1.0 fires on the next phrase and respects cooldo
 	CHECK(d.snapshot().lock_on == true);
 }
 
-TEST_CASE("shuffle plays every normal palette without immediate repeats; breakdown excluded")
+TEST_CASE("shuffle plays every normal palette once before any repeat; breakdown excluded")
 {
-	pd::SetFile s = pdtest::make_set(4, "Pal 3"); // 3 normal (0,1,2) + breakdown (3)
+	constexpr int kNormal = 3; // palettes 0,1,2; breakdown = index 3
+	pd::SetFile s = pdtest::make_set(4, "Pal 3");
 	s.palette_changes.order = pd::ChangeOrder::Shuffle;
 	s.palette_changes.trigger = pd::ChangeTrigger::Phrases;
 	s.palette_changes.every_phrases = 1;
@@ -52,11 +53,13 @@ TEST_CASE("shuffle plays every normal palette without immediate repeats; breakdo
 	s.director.random_off = false;
 	s.director.seed = 7;
 	pd::Director d(s);
-	const WavMono w = pdtest::gen_kick(128.0, 48); // 192 beats -> boundaries 32..160 (5 changes)
+	// 64 bars = 256 beats -> phrase boundaries at 32..224 = 7 palette changes (2+ full
+	// rotations of 3), enough to catch a repeat within any window of N normal palettes.
+	const WavMono w = pdtest::gen_kick(128.0, 64);
 	pdtest::feed_roundtrip(d, w, pdtest::fixture_dir(), "shuffle.wav");
 
 	const auto pcs = pdtest::palette_changes(d.events());
-	REQUIRE(pcs.size() >= 4);
+	REQUIRE(pcs.size() >= 2 * kNormal);
 
 	std::vector<int> seq;
 	for (const auto &e : pcs)
@@ -65,12 +68,17 @@ TEST_CASE("shuffle plays every normal palette without immediate repeats; breakdo
 	// breakdown palette (index 3) never enters the rotation
 	for (int v : seq)
 		CHECK(v != 3);
-	// no immediate repeat
-	for (std::size_t i = 1; i < seq.size(); ++i)
-		CHECK(seq[i] != seq[i - 1]);
-	// every normal palette (0,1,2) is visited at least once
-	for (int p = 0; p < 3; ++p)
-		CHECK(std::find(seq.begin(), seq.end(), p) != seq.end());
+
+	// no repeat within any window of N normal palettes (spec 4.2 + design doc test 7):
+	// every N consecutive changes must be a full permutation of the normal pool.
+	for (std::size_t i = 0; i + kNormal <= seq.size(); ++i) {
+		std::vector<int> window(seq.begin() + static_cast<std::ptrdiff_t>(i),
+					seq.begin() + static_cast<std::ptrdiff_t>(i + kNormal));
+		std::sort(window.begin(), window.end());
+		CAPTURE(i);
+		for (int p = 0; p < kNormal; ++p)
+			CHECK(window[static_cast<std::size_t>(p)] == p);
+	}
 }
 
 TEST_CASE("breakdown palette goes live on BREAKDOWN; next normal on DROP")

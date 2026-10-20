@@ -16,6 +16,7 @@ void Scheduler::reset(const SchedulerConfig &cfg)
 	bd_active_ = false;
 	last_normal_ = -1;
 	order_.clear();
+	shuffle_cycle_.clear();
 	cooldown_ = 0;
 	off_until_ = -1;
 	off_reason_.clear();
@@ -43,17 +44,27 @@ int Scheduler::pick_next(int dir)
 
 	if (cfg_.order == ChangeOrder::Shuffle && dir == 1) {
 		if (order_.empty()) {
-			order_.clear();
-			for (int i : pool) {
-				if (i != live_)
-					order_.push_back(i);
+			if (shuffle_cycle_.empty()) {
+				// Build the canonical seeded permutation over the FULL normal pool
+				// (spec 4.2: no repeats until every palette has played). The breakdown
+				// palette is already excluded by normal_idx().
+				shuffle_cycle_ = pool;
+				for (std::size_t i = shuffle_cycle_.size(); i-- > 1;) {
+					const std::size_t j =
+						static_cast<std::size_t>(rng_.next() * static_cast<double>(i + 1));
+					std::swap(shuffle_cycle_[i], shuffle_cycle_[j]);
+				}
+				// Never open a pass on the palette already live: rotate it to the back
+				// so the first change is real and the pass still covers every palette
+				// exactly once.
+				if (!shuffle_cycle_.empty() && shuffle_cycle_.front() == live_)
+					std::rotate(shuffle_cycle_.begin(), shuffle_cycle_.begin() + 1,
+						    shuffle_cycle_.end());
 			}
-			// Fisher-Yates (mock v2 pickNext), consuming the shared RNG.
-			for (std::size_t i = order_.size(); i-- > 1;) {
-				const std::size_t j =
-					static_cast<std::size_t>(rng_.next() * static_cast<double>(i + 1));
-				std::swap(order_[i], order_[j]);
-			}
+			// Replay the same permutation each full pass, so no palette repeats until
+			// every normal palette has played (acceptance: shuffle plays each palette
+			// once before any repeat).
+			order_ = shuffle_cycle_;
 		}
 		return order_.empty() ? live_ : order_[0];
 	}
@@ -75,6 +86,11 @@ int Scheduler::pick_next(int dir)
 
 std::vector<Event> Scheduler::go_live(int i, const std::string &why, uint64_t beat)
 {
+	// Consume the shuffle pass even when the pick equals the live palette, so a no-op
+	// change can never stall order_ on the same front element (spec 4.2 shuffle rule).
+	if (!order_.empty() && order_.front() == i)
+		order_.erase(order_.begin());
+
 	if (i == live_)
 		return {};
 
@@ -84,8 +100,6 @@ std::vector<Event> Scheduler::go_live(int i, const std::string &why, uint64_t be
 	rot_ = 0;
 	if (i != cfg_.breakdown_index)
 		last_normal_ = i;
-	if (!order_.empty() && order_.front() == i)
-		order_.erase(order_.begin());
 
 	Event e;
 	e.type = Event::Type::PaletteChange;

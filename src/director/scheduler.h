@@ -71,7 +71,8 @@ private:
 	int rot_ = 0;
 	bool bd_active_ = false;
 	int last_normal_ = -1;
-	std::vector<int> order_;
+	std::vector<int> order_;         // remaining palettes of the current shuffle pass (consumed from the front)
+	std::vector<int> shuffle_cycle_; // canonical seeded permutation, replayed each full pass
 	int cooldown_ = 0;
 	int64_t off_until_ = -1;
 	std::string off_reason_;

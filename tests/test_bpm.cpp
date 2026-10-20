@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include <cmath>
 #include <string>
 
 #include "director.h"
@@ -22,7 +23,7 @@ TEST_CASE("BPM estimate within +/-1 at 124/128/132/140")
 		const pd::DirectorState st = d.snapshot();
 		CAPTURE(st.bpm);
 		CAPTURE(st.confidence);
-		CHECK(st.bpm == doctest::Approx(bpm).epsilon(0.008)); // ~1 BPM at 128
-		CHECK(st.confidence > 0.3f);                          // locked
+		CHECK(std::abs(st.bpm - bpm) <= 1.0); // acceptance: BPM within +/-1
+		CHECK(st.confidence > 0.3f);          // locked
 	}
 }

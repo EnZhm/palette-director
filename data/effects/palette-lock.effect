@@ -1,0 +1,106 @@
+/*****************************************************************************
+Palette Director - Palette Lock recolour filter
+Copyright (C) 2026 EnZhm
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+The recolour maths is a faithful port of the Palette Director UI mock v2
+(lockColour / mapA / mapB / lumaMatch / luma).  Mode 0 = gradient map,
+mode 1 = duotone (first + last colour).  The rotation offset is applied
+CPU-side by rotating the uploaded colour array, never in the shader.
+*****************************************************************************/
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float3 palA[8];
+uniform int nA;
+uniform int modeA;
+uniform float3 palB[8];
+uniform int nB;
+uniform int modeB;
+uniform float pfade;
+uniform float amt;
+uniform float contrast;
+uniform float preserve;
+
+sampler_state textureSampler {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData vert_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(vert_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = vert_in.uv;
+	return vert_out;
+}
+
+float luma(float3 c)
+{
+	return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+float3 lumaMatch(float3 c, float l)
+{
+	return clamp(c * (l / max(luma(c), 0.002)), 0.0, 1.0);
+}
+
+float3 mapA(float l)
+{
+	if (modeA == 1)
+		return lerp(palA[0], palA[nA - 1], smoothstep(0.0, 1.0, l));
+	float x = l * float(nA - 1);
+	int i = min(int(floor(x)), nA - 2);
+	return lerp(palA[i], palA[i + 1], x - float(i));
+}
+
+float3 mapB(float l)
+{
+	if (modeB == 1)
+		return lerp(palB[0], palB[nB - 1], smoothstep(0.0, 1.0, l));
+	float x = l * float(nB - 1);
+	int i = min(int(floor(x)), nB - 2);
+	return lerp(palB[i], palB[i + 1], x - float(i));
+}
+
+float3 lockColour(float3 src)
+{
+	float l = clamp((luma(src) - 0.5) * contrast + 0.5, 0.0, 1.0);
+	float3 m = lerp(mapA(l), mapB(l), pfade);
+	return lerp(m, lumaMatch(m, l), preserve);
+}
+
+float4 PSLockColour(VertData vert_in) : TARGET
+{
+	float4 src = image.Sample(textureSampler, vert_in.uv);
+	float3 col = lerp(src.rgb, lockColour(src.rgb), amt);
+	return float4(col, src.a);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(vert_in);
+		pixel_shader  = PSLockColour(vert_in);
+	}
+}

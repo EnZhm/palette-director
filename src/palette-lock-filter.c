@@ -76,7 +76,7 @@ static void settings_from_set(obs_data_t *s, const struct pl_set *set)
 		obs_data_set_int(s, key, p->n_colours);
 		for (int j = 0; j < p->n_colours; j++) {
 			snprintf(key, sizeof(key), S_COLOUR, i, j);
-			obs_data_set_int(s, key, (long long)pl_colour_to_argb(p->colours[j]));
+			obs_data_set_int(s, key, (long long)pl_colour_to_obs(p->colours[j]));
 		}
 	}
 }
@@ -124,7 +124,7 @@ static void set_from_settings(obs_data_t *s, struct pl_set *set)
 
 		for (int j = 0; j < p->n_colours; j++) {
 			snprintf(key, sizeof(key), S_COLOUR, i, j);
-			p->colours[j] = pl_colour_from_argb((unsigned)obs_data_get_int(s, key));
+			p->colours[j] = pl_colour_from_obs((unsigned)obs_data_get_int(s, key));
 		}
 	}
 }
@@ -246,17 +246,19 @@ static void palette_lock_render(void *data, gs_effect_t *unused)
 	pl_rotate_colours(&pa, f->rotation);
 	pl_rotate_colours(&pb, f->rotation);
 
-	float palA[PL_MAX_COLOURS * 3] = {0};
-	float palB[PL_MAX_COLOURS * 3] = {0};
+	float palA[PL_MAX_COLOURS * 4] = {0};
+	float palB[PL_MAX_COLOURS * 4] = {0};
 	for (int i = 0; i < pa.n_colours && i < PL_MAX_COLOURS; i++) {
-		palA[i * 3 + 0] = pa.colours[i].r;
-		palA[i * 3 + 1] = pa.colours[i].g;
-		palA[i * 3 + 2] = pa.colours[i].b;
+		palA[i * 4 + 0] = pa.colours[i].r;
+		palA[i * 4 + 1] = pa.colours[i].g;
+		palA[i * 4 + 2] = pa.colours[i].b;
+		palA[i * 4 + 3] = 0.0f;
 	}
 	for (int i = 0; i < pb.n_colours && i < PL_MAX_COLOURS; i++) {
-		palB[i * 3 + 0] = pb.colours[i].r;
-		palB[i * 3 + 1] = pb.colours[i].g;
-		palB[i * 3 + 2] = pb.colours[i].b;
+		palB[i * 4 + 0] = pb.colours[i].r;
+		palB[i * 4 + 1] = pb.colours[i].g;
+		palB[i * 4 + 2] = pb.colours[i].b;
+		palB[i * 4 + 3] = 0.0f;
 	}
 
 	gs_effect_set_val(f->p_palA, palA, sizeof(palA));

@@ -201,3 +201,52 @@ TEST_CASE("colour count is bounded 2..8")
 	CHECK(p->n_colours == 2);
 	CHECK_FALSE(pl_remove_colour(p, 0)); // floor at 2
 }
+
+/*
+ * OBS colour properties store their value in 0xAABBGGRR byte order
+ * (shared/properties-view/properties-view.cpp color_from_int: red = val & 0xff).
+ * The filter must decode/encode that exact order so red is red and blue is blue.
+ */
+TEST_CASE("pl_colour_from_obs decodes the OBS 0xAABBGGRR byte order")
+{
+	struct pl_colour c = pl_colour_from_obs(0xFF0000FFu); // R=FF G=00 B=00
+	CHECK(c.r == doctest::Approx(1.0f));
+	CHECK(c.g == doctest::Approx(0.0f));
+	CHECK(c.b == doctest::Approx(0.0f));
+
+	struct pl_colour g = pl_colour_from_obs(0xFF00FF00u); // G=FF
+	CHECK(g.r == doctest::Approx(0.0f));
+	CHECK(g.g == doctest::Approx(1.0f));
+	CHECK(g.b == doctest::Approx(0.0f));
+
+	struct pl_colour b = pl_colour_from_obs(0xFFFF0000u); // B=FF
+	CHECK(b.r == doctest::Approx(0.0f));
+	CHECK(b.g == doctest::Approx(0.0f));
+	CHECK(b.b == doctest::Approx(1.0f));
+}
+
+TEST_CASE("pl_colour_to_obs encodes the OBS 0xAABBGGRR byte order")
+{
+	struct pl_colour red = {1.0f, 0.0f, 0.0f};
+	CHECK(pl_colour_to_obs(red) == 0xFF0000FFu);
+
+	struct pl_colour green = {0.0f, 1.0f, 0.0f};
+	CHECK(pl_colour_to_obs(green) == 0xFF00FF00u);
+
+	struct pl_colour blue = {0.0f, 0.0f, 1.0f};
+	CHECK(pl_colour_to_obs(blue) == 0xFFFF0000u);
+}
+
+TEST_CASE("#FF00A0 round-trips exactly through the obs int and hex helpers")
+{
+	const char *hex = "#FF00A0";
+	struct pl_colour c = pl_colour_from_hex(hex);
+
+	unsigned obs = pl_colour_to_obs(c);
+	CHECK(obs == 0xFFA000FFu); // alpha FF, blue A0, green 00, red FF
+
+	struct pl_colour back = pl_colour_from_obs(obs);
+	char out[PL_HEX_LEN];
+	pl_colour_to_hex(back, out);
+	CHECK(strcmp(out, hex) == 0);
+}

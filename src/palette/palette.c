@@ -292,16 +292,18 @@ float pl_luma(struct pl_colour c)
 	return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
 }
 
-struct pl_colour pl_colour_from_argb(unsigned argb)
+struct pl_colour pl_colour_from_obs(unsigned obs)
 {
+	/* OBS stores colours as 0xAABBGGRR: red in the low byte, blue in bits 16..23
+	 * (shared/properties-view/properties-view.cpp color_from_int). */
 	struct pl_colour c;
-	c.r = (float)((argb >> 16) & 0xFF) / 255.0f;
-	c.g = (float)((argb >> 8) & 0xFF) / 255.0f;
-	c.b = (float)(argb & 0xFF) / 255.0f;
+	c.r = (float)(obs & 0xFF) / 255.0f;
+	c.g = (float)((obs >> 8) & 0xFF) / 255.0f;
+	c.b = (float)((obs >> 16) & 0xFF) / 255.0f;
 	return c;
 }
 
-unsigned pl_colour_to_argb(struct pl_colour c)
+unsigned pl_colour_to_obs(struct pl_colour c)
 {
 	unsigned r = (unsigned)(c.r * 255.0f + 0.5f);
 	unsigned g = (unsigned)(c.g * 255.0f + 0.5f);
@@ -312,7 +314,7 @@ unsigned pl_colour_to_argb(struct pl_colour c)
 		g = 255;
 	if (b > 255)
 		b = 255;
-	return 0xFF000000u | (r << 16) | (g << 8) | b;
+	return 0xFF000000u | (b << 16) | (g << 8) | r;
 }
 
 struct pl_colour pl_colour_from_hex(const char *hex)

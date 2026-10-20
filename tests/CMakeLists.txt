@@ -52,9 +52,11 @@ add_executable(
   test_silence.cpp
   test_determinism.cpp
   test_palette.cpp
+  test_cbuffer_layout.cpp
   fixtures/gen_fixtures.cpp
 )
 target_link_libraries(pd_director_tests PRIVATE pd_director pd_palette)
+target_compile_definitions(pd_director_tests PRIVATE PD_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(
   pd_director_tests
   PRIVATE

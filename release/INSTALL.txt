@@ -1,0 +1,95 @@
+Palette Director 0.1.0 for OBS Studio 32.2.x (Windows x64)
+==========================================================
+
+Palette Director locks a Synesthesia (Spout) VJ feed to a set of colour
+palettes inside OBS, and reacts to the music from your DJ mixer: palettes
+change on drops or phrases, and the lock sometimes lets go so the raw
+visuals show through.
+
+It adds:
+  - a video filter "Palette Lock" (put it on the Spout source)
+  - a dock "Palette Director" (live status, palette pads, controls, log)
+
+
+1. Install
+----------
+1. Close OBS.
+2. If an older Palette Director is installed, delete the folder
+     C:\ProgramData\obs-studio\plugins\palette-director
+3. Unzip palette-director-0.1.0-windows-x64.zip and copy the folder
+   "palette-director" into
+     C:\ProgramData\obs-studio\plugins\
+   so that these files exist:
+     C:\ProgramData\obs-studio\plugins\palette-director\bin\64bit\palette-director.dll
+     C:\ProgramData\obs-studio\plugins\palette-director\data\effects\palette-lock.effect
+     C:\ProgramData\obs-studio\plugins\palette-director\data\locale\en-US.ini
+     C:\ProgramData\obs-studio\plugins\palette-director\data\sets\techno-apocalypse.json
+4. Start OBS 32.2.x. Help > Log Files > View Current Log should show
+     [palette-director] plugin loaded successfully (version 0.1.0)
+   If it does not, check the folder layout above.
+
+
+2. Add the filter to the Spout source
+-------------------------------------
+1. In Sources, right-click the Spout2 source that carries Synesthesia and
+   choose Filters.
+2. Under Effect Filters press "+" and choose "Palette Lock".
+3. Put Palette Lock ABOVE any finishing filters (CRT etc.) so they grade
+   the locked colours.
+4. Load the bundled set: Performance set > "Load file..." and open
+     C:\ProgramData\obs-studio\plugins\palette-director\data\sets\techno-apocalypse.json
+   (the file dialog opens in that folder). The set is copied into your
+   set folder, Documents\PaletteDirector\sets\, and appears in the Set list.
+5. "Save" writes the current set to Documents\PaletteDirector\sets\<name>.json.
+   New / Duplicate / Rename / Delete manage the sets in that folder. At
+   least one set always exists; switching away from a set with unsaved
+   changes asks first.
+
+
+3. Pick the mixer audio source
+------------------------------
+The Director listens to one OBS audio source and finds the BPM, bars,
+phrases, breakdowns and drops itself.
+1. Make sure the DJ mixer feed is an OBS audio source (for example an
+   "Audio Input Capture" named "Mixer" on the line-in the mixer is
+   plugged into). A source with "Mixer" in its name is picked
+   automatically when the filter is added.
+2. In the Palette Lock filter: Director > Audio source > choose it.
+3. The source may be muted in the OBS Audio Mixer; the Director still
+   hears it.
+4. With no audio source (or a silent feed) the Director runs at the
+   Fallback BPM: the lock stays on, nothing changes on its own, and
+   manual palette changes still work.
+
+
+4. Open the dock
+----------------
+Docks menu > "Palette Director". Drag it where you want it. The Filter
+list at the top picks which Palette Lock filter it shows and controls.
+Tap a palette pad to make it live. Closing the dock does not stop the
+Director.
+
+
+5. Hotkeys
+----------
+Set them in File > Settings > Hotkeys. Each Palette Lock filter has its
+own set, labelled with the filter name in brackets. Defaults:
+
+  Force off (hold)                      F13
+  Force on (toggle)                     F14
+  Pause / resume director               F15
+  Rotate colours now                    F16
+  PANIC (lock on, director paused)      F17
+  Next palette                          F18
+  Previous palette                      F19
+  Palette 1-8 go live                   Ctrl+1 ... Ctrl+8
+
+PANIC holds the lock on with the live palette and pauses the Director;
+press Pause / resume (F15) to let it run again.
+
+
+6. Uninstall
+------------
+Close OBS and delete
+  C:\ProgramData\obs-studio\plugins\palette-director
+Your sets in Documents\PaletteDirector\sets\ are kept.

@@ -1,0 +1,4 @@
+# bundled set files ship byte-identical to their source (LF, no conversion)
+data/sets/*.json -text
+# INSTALL.txt ships CRLF + ASCII
+release/INSTALL.txt -text

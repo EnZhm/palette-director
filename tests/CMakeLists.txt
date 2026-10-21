@@ -38,7 +38,7 @@ target_include_directories(pd_director PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../src
 # Pure-C palette set model (libobs/Qt-free) exercised by test_palette.cpp.
 set(PD_PALETTE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../src/palette)
 
-add_library(pd_palette STATIC ${PD_PALETTE_ROOT}/palette.c)
+add_library(pd_palette STATIC ${PD_PALETTE_ROOT}/palette.c ${CMAKE_CURRENT_SOURCE_DIR}/../src/sets/set-file.cpp)
 target_include_directories(pd_palette PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
 add_executable(
@@ -55,6 +55,7 @@ add_executable(
   test_cbuffer_layout.cpp
   test_breakdown_bpm.cpp
   test_host_api.cpp
+  test_set_file.cpp
   fixtures/gen_fixtures.cpp
 )
 target_link_libraries(pd_director_tests PRIVATE pd_director pd_palette)

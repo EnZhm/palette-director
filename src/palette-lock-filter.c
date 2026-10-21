@@ -22,11 +22,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>/
 #include <stdlib.h>
 #include <string.h>
 
+#include <util/platform.h>
 #include <util/threading.h>
 
 #include "palette-lock-filter.h"
 #include "palette-lock-host.h"
 #include "palette/palette.h"
+#include "sets/set-file.h"
+#include "sets/set-store.h"
+#include "ui/pd-ui.h"
 
 #define S_PALETTE "palette.%d.name"
 #define S_MODE "palette.%d.mode"
@@ -74,6 +78,7 @@ struct palette_lock_filter {
 static void write_set(obs_data_t *s, const struct pl_set *set, bool def)
 {
 	SET_STRING(s, "set_name", set->name);
+	SET_STRING(s, "set_select", set->name);
 	SET_STRING(s, "synesthesia_playlist", set->synesthesia_playlist);
 	SET_INT(s, "n_palettes", set->n_palettes);
 	SET_DOUBLE(s, "strength", set->strength);
@@ -588,10 +593,13 @@ static void palette_lock_render(void *data, gs_effect_t *unused)
 /* ------------------------------------------------------------------------- */
 /* properties                                                                 */
 
-static void commit(struct palette_lock_filter *f, int force_live, int edit)
+/* Apply a modified copy of the set through the settings (the video thread picks it up in
+ * update), so properties callbacks never mutate f->set while the render thread reads it. */
+static void commit_set(struct palette_lock_filter *f, const struct pl_set *ns, int force_live, int edit)
 {
 	obs_data_t *s = obs_source_get_settings(f->context);
-	settings_from_set(s, &f->set);
+	settings_from_set(s, ns);
+	obs_data_set_string(s, "set_select", ns->name);
 	obs_data_set_int(s, "edit_palette", edit);
 	if (force_live >= 0) {
 		obs_data_set_int(s, "live_palette", force_live);
@@ -602,12 +610,9 @@ static void commit(struct palette_lock_filter *f, int force_live, int edit)
 	obs_data_release(s);
 }
 
-static bool btn_noop(obs_properties_t *props, obs_property_t *property, void *data)
+static void commit(struct palette_lock_filter *f, int force_live, int edit)
 {
-	(void)props;
-	(void)property;
-	(void)data;
-	return false;
+	commit_set(f, &f->set, force_live, edit);
 }
 
 static bool btn_palette_action(obs_properties_t *props, obs_property_t *property, void *data)
@@ -621,31 +626,33 @@ static bool btn_palette_action(obs_properties_t *props, obs_property_t *property
 		live = f->live_setting;
 	const int live_before = live;
 	int edit = f->edit_palette;
+	struct pl_set ns = f->set;
 
 	if (strcmp(name, "palette.add") == 0) {
 		char nm[PL_NAME_MAX];
-		snprintf(nm, sizeof(nm), "Palette %d", f->set.n_palettes + 1);
+		snprintf(nm, sizeof(nm), "Palette %d", ns.n_palettes + 1);
 		int idx = -1;
-		if (!pl_add_palette(&f->set, nm, &idx))
+		if (!pl_add_palette(&ns, nm, &idx))
 			return false;
 		edit = idx;
 	} else if (strcmp(name, "palette.dup") == 0) {
 		int idx = -1;
-		if (!pl_duplicate_palette(&f->set, edit, &live, &edit, &idx))
+		if (!pl_duplicate_palette(&ns, edit, &live, &edit, &idx))
 			return false;
 		edit = idx;
 	} else if (strcmp(name, "palette.del") == 0) {
-		const char *gone = f->set.palettes[edit].name;
+		char gone[PL_NAME_MAX];
+		snprintf(gone, sizeof(gone), "%s", ns.palettes[edit].name);
 		blog(LOG_INFO, "[palette-lock] '%s': palette '%s' deleted%s", obs_source_get_name(f->context), gone,
 		     edit == live ? " (was live: next palette takes over)" : "");
-		if (!pl_delete_palette(&f->set, edit, &live, &edit))
+		if (!pl_delete_palette(&ns, edit, &live, &edit))
 			return false;
-		commit(f, live, edit); /* indices changed: re-sync the Director's live palette */
+		commit_set(f, &ns, live, edit); /* indices changed: re-sync the Director's live palette */
 		return true;
 	} else if (strcmp(name, "palette.up") == 0) {
-		pl_move_palette(&f->set, edit, -1, &live, &edit);
+		pl_move_palette(&ns, edit, -1, &live, &edit);
 	} else if (strcmp(name, "palette.dn") == 0) {
-		pl_move_palette(&f->set, edit, 1, &live, &edit);
+		pl_move_palette(&ns, edit, 1, &live, &edit);
 	} else if (strcmp(name, "palette.live") == 0) {
 		if (edit == live)
 			return false;
@@ -656,7 +663,7 @@ static bool btn_palette_action(obs_properties_t *props, obs_property_t *property
 		return false;
 	}
 
-	commit(f, live != live_before ? live : -1, edit);
+	commit_set(f, &ns, live != live_before ? live : -1, edit);
 	return true;
 }
 
@@ -669,7 +676,8 @@ static bool btn_colour_action(obs_properties_t *props, obs_property_t *property,
 
 	if (edit < 0 || edit >= f->set.n_palettes)
 		return false;
-	struct pl_palette *p = &f->set.palettes[edit];
+	struct pl_set ns = f->set;
+	struct pl_palette *p = &ns.palettes[edit];
 
 	if (strcmp(name, "colour.add") == 0) {
 		if (!pl_add_colour(p))
@@ -696,7 +704,7 @@ static bool btn_colour_action(obs_properties_t *props, obs_property_t *property,
 			return false;
 	}
 
-	commit(f, -1, f->edit_palette);
+	commit_set(f, &ns, -1, f->edit_palette);
 	return true;
 }
 
@@ -705,8 +713,215 @@ static bool btn_reroll(obs_properties_t *props, obs_property_t *property, void *
 	(void)props;
 	(void)property;
 	struct palette_lock_filter *f = data;
-	f->set.seed = (unsigned)(rand() % 100000);
-	commit(f, -1, f->edit_palette);
+	struct pl_set ns = f->set;
+	ns.seed = (unsigned)(rand() % 100000);
+	commit_set(f, &ns, -1, f->edit_palette);
+	return true;
+}
+
+/* ------------------------------------------------------------------------- */
+/* performance set lifecycle (design "Lifecycle rules", mock v2 set buttons)  */
+
+static bool set_is_dirty(const struct pl_set *s)
+{
+	return pd_sets_dirty(s);
+}
+
+/* switching away from a set with unsaved changes asks first (mock setSel onchange) */
+static bool confirm_discard(struct palette_lock_filter *f)
+{
+	if (!set_is_dirty(&f->set))
+		return true;
+	char msg[PL_NAME_MAX + 64];
+	snprintf(msg, sizeof(msg), "Discard unsaved changes to \"%s\"?", f->set.name);
+	return pd_ui_confirm(obs_module_text("PaletteDirector"), msg);
+}
+
+static void apply_set(struct palette_lock_filter *f, const struct pl_set *ns, const char *why)
+{
+	blog(LOG_INFO, "[palette-lock] '%s': set \"%s\" %s (%d palettes)", obs_source_get_name(f->context), ns->name,
+	     why, ns->n_palettes);
+	commit_set(f, ns, 0, 0);
+}
+
+static void unique_set_name(char *out, size_t n, const char *base)
+{
+	struct pd_set_entry list[PD_SETS_MAX];
+	const int c = pd_sets_list(list, PD_SETS_MAX);
+	snprintf(out, n, "%s", base);
+	for (int k = 2; k < 100; k++) {
+		bool clash = false;
+		char slug_a[PL_NAME_MAX + 8], slug_b[PL_NAME_MAX + 8];
+		pd_set_slug(out, slug_a, sizeof(slug_a));
+		for (int i = 0; i < c && !clash; i++) {
+			pd_set_slug(list[i].name, slug_b, sizeof(slug_b));
+			clash = strcmp(slug_a, slug_b) == 0;
+		}
+		if (!clash)
+			return;
+		snprintf(out, n, "%s (%d)", base, k);
+	}
+}
+
+static bool btn_set_action(obs_properties_t *props, obs_property_t *property, void *data)
+{
+	(void)props;
+	struct palette_lock_filter *f = data;
+	const char *name = obs_property_name(property);
+	struct pl_set ns = f->set;
+	const char *title = obs_module_text("PaletteDirector");
+
+	if (strcmp(name, "set.save") == 0) {
+		char path[512];
+		if (!pd_sets_save(&f->set, path, sizeof(path))) {
+			pd_ui_message(title, "Could not write the set file.");
+			return false;
+		}
+		blog(LOG_INFO, "[palette-lock] '%s': set \"%s\" saved to %s", obs_source_get_name(f->context),
+		     f->set.name, path);
+		return true;
+	}
+	if (strcmp(name, "set.new") == 0) {
+		if (!confirm_discard(f))
+			return false;
+		char *n = pd_ui_prompt(title, "New set name", "New Show");
+		if (!n)
+			return false;
+		struct pl_set fresh;
+		pl_set_default(&fresh);
+		unique_set_name(fresh.name, sizeof(fresh.name), n);
+		bfree(n);
+		apply_set(f, &fresh, "created (unsaved)");
+		return true;
+	}
+	if (strcmp(name, "set.dup") == 0) {
+		char def[PL_NAME_MAX + 16];
+		snprintf(def, sizeof(def), "%s (copy)", f->set.name);
+		char *n = pd_ui_prompt(title, "Name for the copy", def);
+		if (!n)
+			return false;
+		unique_set_name(ns.name, sizeof(ns.name), n);
+		bfree(n);
+		apply_set(f, &ns, "duplicated (unsaved)");
+		return true;
+	}
+	if (strcmp(name, "set.ren") == 0) {
+		char *n = pd_ui_prompt(title, "Rename set", f->set.name);
+		if (!n)
+			return false;
+		if (strcmp(n, f->set.name) == 0) {
+			bfree(n);
+			return false;
+		}
+		char old[PL_NAME_MAX];
+		snprintf(old, sizeof(old), "%s", f->set.name);
+		unique_set_name(ns.name, sizeof(ns.name), n);
+		bfree(n);
+		/* the file follows the rename; its saved contents stay as they were */
+		struct pl_set disk;
+		char err[256];
+		if (pd_sets_load_name(old, &disk, err, sizeof(err))) {
+			snprintf(disk.name, sizeof(disk.name), "%s", ns.name);
+			if (pd_sets_save(&disk, NULL, 0))
+				pd_sets_delete(old);
+		}
+		blog(LOG_INFO, "[palette-lock] '%s': set \"%s\" renamed to \"%s\"", obs_source_get_name(f->context),
+		     old, ns.name);
+		commit_set(f, &ns, -1, f->edit_palette);
+		return true;
+	}
+	if (strcmp(name, "set.del") == 0) {
+		struct pd_set_entry list[PD_SETS_MAX];
+		const int c = pd_sets_list(list, PD_SETS_MAX);
+		int cur = -1;
+		for (int i = 0; i < c; i++)
+			if (strcmp(list[i].name, f->set.name) == 0)
+				cur = i;
+		const int total = c + (cur < 0 ? 1 : 0);
+		if (total <= 1) /* at least one set always exists */
+			return false;
+		char msg[PL_NAME_MAX + 96];
+		snprintf(msg, sizeof(msg), "Delete set \"%s\"? The filter falls back to the previous set.",
+			 f->set.name);
+		if (!pd_ui_confirm(title, msg))
+			return false;
+		char gone[PL_NAME_MAX];
+		snprintf(gone, sizeof(gone), "%s", f->set.name);
+		if (cur >= 0)
+			pd_sets_delete(gone);
+		/* previous set in the list (mock: S.cur = max(0, S.cur - 1)) */
+		int fall = cur >= 0 ? (cur > 0 ? cur - 1 : 1) : c - 1;
+		if (fall >= c)
+			fall = c - 1;
+		struct pl_set prev;
+		char err[256];
+		if (fall < 0 || !pd_sets_load_file(list[fall].path, &prev, err, sizeof(err))) {
+			pd_ui_message(title, "Could not load the previous set.");
+			return false;
+		}
+		blog(LOG_INFO, "[palette-lock] '%s': set \"%s\" deleted -> now \"%s\"", obs_source_get_name(f->context),
+		     gone, prev.name);
+		apply_set(f, &prev, "loaded (fallback after delete)");
+		return true;
+	}
+	if (strcmp(name, "set.load") == 0) {
+		if (!confirm_discard(f))
+			return false;
+		char *bundled = obs_module_file("sets");
+		char *path = pd_ui_open_json(obs_module_text("LoadFile"), bundled);
+		bfree(bundled);
+		if (!path)
+			return false;
+		struct pl_set loaded;
+		char err[256] = {0};
+		const bool ok = pd_sets_load_file(path, &loaded, err, sizeof(err));
+		if (!ok) {
+			char msg[512];
+			snprintf(msg, sizeof(msg), "Could not load %s: %s", path, err);
+			pd_ui_message(title, msg);
+			bfree(path);
+			return false;
+		}
+		blog(LOG_INFO, "[palette-lock] '%s': loaded set file %s", obs_source_get_name(f->context), path);
+		bfree(path);
+		/* import into the store when it isn't there yet, so it shows in the set list */
+		char store_path[512];
+		if (pd_sets_path_for(loaded.name, store_path, sizeof(store_path)) && !os_file_exists(store_path))
+			pd_sets_save(&loaded, NULL, 0);
+		apply_set(f, &loaded, "loaded from file");
+		return true;
+	}
+	return false;
+}
+
+static bool on_set_selected(void *priv, obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
+{
+	(void)props;
+	(void)property;
+	struct palette_lock_filter *f = priv;
+	const char *want = obs_data_get_string(settings, "set_select");
+	if (!want || !want[0] || strcmp(want, f->set.name) == 0)
+		return false;
+	if (!confirm_discard(f)) {
+		obs_data_set_string(settings, "set_select", f->set.name);
+		return true;
+	}
+	struct pl_set ns;
+	char err[256] = {0};
+	if (!pd_sets_load_name(want, &ns, err, sizeof(err))) {
+		pd_ui_message(obs_module_text("PaletteDirector"), err);
+		obs_data_set_string(settings, "set_select", f->set.name);
+		return true;
+	}
+	/* write the loaded set straight into the dialog's settings so the view and the filter agree */
+	settings_from_set(settings, &ns);
+	obs_data_set_int(settings, "live_palette", 0);
+	obs_data_set_int(settings, "edit_palette", 0);
+	os_atomic_exchange_long(&f->force_live, 0);
+	f->live_setting = 0;
+	blog(LOG_INFO, "[palette-lock] '%s': set \"%s\" loaded (%d palettes)", obs_source_get_name(f->context), ns.name,
+	     ns.n_palettes);
+	obs_source_update(f->context, settings);
 	return true;
 }
 
@@ -743,10 +958,11 @@ static bool on_rename(void *priv, obs_properties_t *props, obs_property_t *prope
 	const char *newname = obs_data_get_string(settings, key);
 
 	/* enforce the unique, non-empty name rule; reject and revert on violation */
-	if (!pl_rename_palette(&f->set, edit, newname))
-		obs_data_set_string(settings, key, f->set.palettes[edit].name);
+	struct pl_set ns = f->set;
+	if (!pl_rename_palette(&ns, edit, newname))
+		obs_data_set_string(settings, key, ns.palettes[edit].name);
 	/* the breakdown reference follows the renamed palette */
-	obs_data_set_string(settings, "breakdown_palette", f->set.breakdown);
+	obs_data_set_string(settings, "breakdown_palette", ns.breakdown);
 
 	return true; /* refresh the list so it shows the (possibly reverted) name */
 }
@@ -777,19 +993,38 @@ static obs_properties_t *palette_lock_properties(void *data)
 	if (live < 0 || live >= f->set.n_palettes)
 		live = f->live_setting;
 	const int bd_idx = pl_breakdown_index(&f->set);
+	obs_property_t *b0;
 
-	/* ---- Performance set (UI only until P6 set-file I/O) ---- */
+	/* ---- Performance set (schema-2 set files, spec 5.1) ---- */
 	obs_properties_t *gset = obs_properties_create();
-	obs_property_t *set_sel = obs_properties_add_list(gset, "set_name", obs_module_text("Set"), OBS_COMBO_TYPE_LIST,
-							  OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(set_sel, f->set.name, f->set.name);
-	obs_properties_add_button2(gset, "set.new", obs_module_text("New"), btn_noop, f);
-	obs_properties_add_button2(gset, "set.dup", obs_module_text("Duplicate"), btn_noop, f);
-	obs_properties_add_button2(gset, "set.ren", obs_module_text("Rename"), btn_noop, f);
-	obs_properties_add_button2(gset, "set.del", obs_module_text("Delete"), btn_noop, f);
-	obs_properties_add_button2(gset, "set.save", obs_module_text("Save"), btn_noop, f);
-	obs_properties_add_button2(gset, "set.load", obs_module_text("LoadFile"), btn_noop, f);
+	obs_property_t *set_sel = obs_properties_add_list(gset, "set_select", obs_module_text("Set"),
+							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	struct pd_set_entry sets[PD_SETS_MAX];
+	const int n_sets = pd_sets_list(sets, PD_SETS_MAX);
+	bool listed = false;
+	for (int i = 0; i < n_sets; i++) {
+		obs_property_list_add_string(set_sel, sets[i].name, sets[i].name);
+		listed = listed || strcmp(sets[i].name, f->set.name) == 0;
+	}
+	if (!listed)
+		obs_property_list_add_string(set_sel, f->set.name, f->set.name);
+	obs_property_set_modified_callback2(set_sel, on_set_selected, f);
+	const bool dirty = set_is_dirty(&f->set);
+	obs_properties_add_button2(gset, "set.new", obs_module_text("New"), btn_set_action, f);
+	obs_properties_add_button2(gset, "set.dup", obs_module_text("Duplicate"), btn_set_action, f);
+	obs_properties_add_button2(gset, "set.ren", obs_module_text("Rename"), btn_set_action, f);
+	b0 = obs_properties_add_button2(gset, "set.del", obs_module_text("Delete"), btn_set_action, f);
+	obs_property_set_enabled(b0, n_sets + (listed ? 0 : 1) > 1);
+	obs_properties_add_button2(gset, "set.save", obs_module_text("Save"), btn_set_action, f);
+	obs_properties_add_button2(gset, "set.load", obs_module_text("LoadFile"), btn_set_action, f);
 	obs_properties_add_text(gset, "synesthesia_playlist", obs_module_text("SynesthesiaPlaylist"), OBS_TEXT_DEFAULT);
+	char set_path[600];
+	char shown[700];
+	if (!pd_sets_path_for(f->set.name, set_path, sizeof(set_path)))
+		snprintf(set_path, sizeof(set_path), "(no Documents folder)");
+	snprintf(shown, sizeof(shown), "%s%s", set_path, dirty ? "  - unsaved changes" : "");
+	obs_property_t *pinfo = obs_properties_add_text(gset, "set.path", shown, OBS_TEXT_INFO);
+	obs_property_text_set_info_type(pinfo, dirty ? OBS_TEXT_INFO_WARNING : OBS_TEXT_INFO_NORMAL);
 	obs_properties_add_group(props, "performance_set", obs_module_text("PerformanceSet"), OBS_GROUP_NORMAL, gset);
 
 	/* ---- Palettes ---- */
@@ -798,7 +1033,7 @@ static obs_properties_t *palette_lock_properties(void *data)
 	obs_property_t *list = obs_properties_add_list(gpal, "edit_palette", obs_module_text("Palettes"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	for (int i = 0; i < f->set.n_palettes; i++) {
-		char label[PL_NAME_MAX + 32];
+		char label[PL_NAME_MAX + 96];
 		const char *mode = f->set.palettes[i].mode == PL_MODE_DUOTONE ? "duo" : "grad";
 		snprintf(label, sizeof(label), "%s %d. %s · %s%s", (i == live) ? "●" : " ", i + 1,
 			 f->set.palettes[i].name, mode, i == bd_idx ? " · breakdown" : "");

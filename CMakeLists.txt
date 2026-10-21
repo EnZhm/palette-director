@@ -47,6 +47,9 @@ target_sources(
     src/palette-lock-filter.c
     src/palette-lock-host.cpp
     src/palette/palette.c
+    src/sets/set-file.cpp
+    src/sets/set-store.cpp
+    src/ui/pd-ui.cpp
     src/director/director.cpp
     src/director/analysis.cpp
     src/director/beat_tracker.cpp

@@ -65,6 +65,18 @@ struct pl_palette {
 	struct pl_colour colours[PL_MAX_COLOURS];
 };
 
+enum pl_trigger {
+	PL_TRIGGER_DROP = 0,    /* every drop */
+	PL_TRIGGER_PHRASES = 1, /* every N phrases */
+	PL_TRIGGER_RANDOM = 2,  /* random, per phrase */
+	PL_TRIGGER_MANUAL = 3,  /* manual only */
+};
+
+enum pl_order {
+	PL_ORDER_SEQUENCE = 0, /* in list order */
+	PL_ORDER_SHUFFLE = 1,  /* shuffle (no repeats) */
+};
+
 struct pl_set {
 	char name[PL_NAME_MAX];
 	char synesthesia_playlist[PL_NAME_MAX];
@@ -74,7 +86,34 @@ struct pl_set {
 	float contrast;        /* 0.5..2 */
 	float preserve;        /* 0..1 (keep brightness) */
 	float crossfade_beats; /* 0 = cut, else beats */
+
+	/* Palette changes (P4; defaults = mock DEF_DIR) */
+	int trigger;       /* enum pl_trigger */
+	int every_phrases; /* 1..16 */
+	float change_chance;
+	int order;                   /* enum pl_order */
+	char breakdown[PL_NAME_MAX]; /* breakdown palette BY NAME, "" = none */
+
+	/* Director + lock behaviours (P4; defaults = mock DEF_DIR) */
+	bool dir_enabled;
+	int phrase_beats;      /* 16 | 32 */
+	float lock_fade_beats; /* 0.25..8 */
+	float fallback_bpm;    /* 60..200 */
+	bool random_off;
+	float random_chance;
+	int bars_min;
+	int bars_max;
+	int cooldown_phrases;
+	bool off_on_breakdown;
+	bool off_on_drop;
+	int drop_bars;
+	float breathing;
+	bool rotation;
+	unsigned seed; /* 0..99999 */
 };
+
+/* index of the breakdown palette (resolved by name), -1 = none */
+int pl_breakdown_index(const struct pl_set *s);
 
 void pl_set_init(struct pl_set *s);
 void pl_set_default(struct pl_set *s);

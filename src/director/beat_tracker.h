@@ -19,6 +19,12 @@ public:
 	double confidence() const { return confidence_; }
 	double beats() const { return beats_; }
 	void reset();
+	void set_fallback_bpm(double bpm)
+	{
+		if (effective_bpm_ == fallback_bpm_)
+			effective_bpm_ = bpm;
+		fallback_bpm_ = bpm;
+	}
 
 private:
 	double autocorr(std::size_t lag) const;
@@ -43,6 +49,8 @@ private:
 	double conf_threshold_ = 0.30;
 
 	double onset_peak_ = 0.0;
+	std::deque<double> recent_max_; // last ~2 s of onsets (activity gate)
+	std::size_t recent_len_ = 0;
 };
 
 } // namespace pd

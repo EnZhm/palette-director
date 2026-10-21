@@ -53,6 +53,8 @@ add_executable(
   test_determinism.cpp
   test_palette.cpp
   test_cbuffer_layout.cpp
+  test_breakdown_bpm.cpp
+  test_host_api.cpp
   fixtures/gen_fixtures.cpp
 )
 target_link_libraries(pd_director_tests PRIVATE pd_director pd_palette)

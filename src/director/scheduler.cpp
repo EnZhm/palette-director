@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdio>
 
 namespace pd {
 
@@ -23,6 +24,72 @@ void Scheduler::reset(const SchedulerConfig &cfg)
 	paused_ = false;
 	force_off_ = false;
 	forced_on_ = false;
+}
+
+void Scheduler::reconfigure(const SchedulerConfig &cfg, int live)
+{
+	const bool structure = cfg.palette_count != cfg_.palette_count || cfg.names != cfg_.names ||
+			       cfg.breakdown_index != cfg_.breakdown_index || cfg.order != cfg_.order;
+	const bool reseed = cfg.seed != cfg_.seed;
+	cfg_ = cfg;
+	if (reseed)
+		rng_.reseed(cfg.seed);
+	if (structure || reseed) {
+		order_.clear();
+		shuffle_cycle_.clear();
+	}
+	if (structure) {
+		// indices may have moved: drop the outgoing palette instead of fading from a stale one
+		prev_ = -1;
+		pfade_ = 1.0f;
+		if (last_normal_ >= cfg_.palette_count || last_normal_ == cfg_.breakdown_index)
+			last_normal_ = -1;
+	}
+	if (cfg_.breakdown_index < 0)
+		bd_active_ = false;
+	if (live >= 0 && live < cfg_.palette_count && live != live_) {
+		live_ = live;
+		prev_ = -1;
+		pfade_ = 1.0f;
+		rot_ = 0;
+	}
+	if (live_ >= cfg_.palette_count || live_ < 0) {
+		live_ = cfg_.palette_count > 0 ? cfg_.palette_count - 1 : 0;
+		prev_ = -1;
+		pfade_ = 1.0f;
+		rot_ = 0;
+	}
+	if (prev_ >= cfg_.palette_count)
+		prev_ = -1;
+	if (live_ < static_cast<int>(cfg_.colour_counts.size()) && cfg_.colour_counts[live_] > 0)
+		rot_ %= cfg_.colour_counts[static_cast<std::size_t>(live_)];
+	if (!cfg_.off_on_breakdown && off_reason_ == "breakdown") {
+		off_until_ = -1;
+		off_reason_.clear();
+	}
+}
+
+int Scheduler::peek_next() const
+{
+	if (cfg_.trigger == ChangeTrigger::Manual)
+		return -1;
+	const std::vector<int> pool = normal_idx();
+	if (pool.empty())
+		return -1;
+	if (cfg_.order == ChangeOrder::Shuffle)
+		return order_.empty() ? -1 : order_[0];
+	auto it = std::find(pool.begin(), pool.end(), live_);
+	int base;
+	if (it != pool.end())
+		base = live_;
+	else if (last_normal_ >= 0 && std::find(pool.begin(), pool.end(), last_normal_) != pool.end())
+		base = last_normal_;
+	else
+		base = pool[0];
+	const auto bit = std::find(pool.begin(), pool.end(), base);
+	const int idx = static_cast<int>(std::distance(pool.begin(), bit));
+	const int n = static_cast<int>(pool.size());
+	return pool[static_cast<std::size_t>((idx + 1) % n)];
 }
 
 std::vector<int> Scheduler::normal_idx() const
@@ -111,7 +178,9 @@ std::vector<Event> Scheduler::go_live(int i, const std::string &why, uint64_t be
 				       : std::to_string(i);
 	e.detail = "palette -> " + nm + " (" + why;
 	if (cfg_.crossfade_beats > 0.0f) {
-		e.detail += ", " + std::to_string(cfg_.crossfade_beats) + "-beat crossfade";
+		char beats[32];
+		std::snprintf(beats, sizeof(beats), "%g", static_cast<double>(cfg_.crossfade_beats));
+		e.detail += std::string(", ") + beats + "-beat crossfade";
 	} else {
 		e.detail += ", cut";
 	}
@@ -199,7 +268,10 @@ std::vector<Event> Scheduler::on_phrase(uint64_t phrase, uint64_t beat)
 		if (cfg_.trigger == ChangeTrigger::Random) {
 			const double r = rng_.next();
 			if (r < cfg_.chance) {
-				auto evs = go_live(pick_next(1), "random", beat);
+				char why[48];
+				std::snprintf(why, sizeof(why), "random %.2f < %.2f", r,
+					      static_cast<double>(cfg_.chance));
+				auto evs = go_live(pick_next(1), why, beat);
 				out.insert(out.end(), evs.begin(), evs.end());
 			}
 		}
@@ -223,8 +295,10 @@ std::vector<Event> Scheduler::on_phrase(uint64_t phrase, uint64_t beat)
 			Event e;
 			e.type = Event::Type::LockOff;
 			e.beat = beat;
-			e.detail = "random off for " + std::to_string(bars) + " bars, cooldown " +
-				   std::to_string(cfg_.cooldown_phrases);
+			char why[64];
+			std::snprintf(why, sizeof(why), "random off (%.2f < %.2f) for %d bar%s", r,
+				      static_cast<double>(cfg_.random_chance), bars, bars > 1 ? "s" : "");
+			e.detail = std::string(why) + ", cooldown " + std::to_string(cfg_.cooldown_phrases);
 			out.push_back(e);
 		}
 	}

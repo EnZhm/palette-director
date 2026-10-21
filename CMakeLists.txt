@@ -42,8 +42,19 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.c src/palette-lock-filter.c src/palette/palette.c src/dock/palette-director-dock.cpp
+  PRIVATE
+    src/plugin-main.c
+    src/palette-lock-filter.c
+    src/palette-lock-host.cpp
+    src/palette/palette.c
+    src/director/director.cpp
+    src/director/analysis.cpp
+    src/director/beat_tracker.cpp
+    src/director/section_state.cpp
+    src/director/scheduler.cpp
+    src/dock/palette-director-dock.cpp
 )
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
 if(HAVE_FRONTEND_API)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ENABLE_FRONTEND_API)

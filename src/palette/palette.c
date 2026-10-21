@@ -28,6 +28,39 @@ void pl_set_init(struct pl_set *s)
 	s->contrast = 1.1f;
 	s->preserve = 0.0f;
 	s->crossfade_beats = 2.0f;
+
+	/* mock v2 DEF_DIR */
+	s->trigger = PL_TRIGGER_DROP;
+	s->every_phrases = 4;
+	s->change_chance = 0.25f;
+	s->order = PL_ORDER_SEQUENCE;
+	s->breakdown[0] = '\0';
+	s->dir_enabled = true;
+	s->phrase_beats = 32;
+	s->lock_fade_beats = 1.0f;
+	s->fallback_bpm = 128.0f;
+	s->random_off = true;
+	s->random_chance = 0.15f;
+	s->bars_min = 1;
+	s->bars_max = 4;
+	s->cooldown_phrases = 2;
+	s->off_on_breakdown = false;
+	s->off_on_drop = false;
+	s->drop_bars = 2;
+	s->breathing = 0.0f;
+	s->rotation = false;
+	s->seed = 7;
+}
+
+int pl_breakdown_index(const struct pl_set *s)
+{
+	if (!s->breakdown[0])
+		return -1;
+	for (int i = 0; i < s->n_palettes; i++) {
+		if (strcmp(s->palettes[i].name, s->breakdown) == 0)
+			return i;
+	}
+	return -1;
 }
 
 void pl_palette_default(struct pl_palette *p, const char *name)
@@ -140,7 +173,11 @@ bool pl_rename_palette(struct pl_set *s, int index, const char *name)
 		return false;
 	if (!pl_name_unique(s, name, index))
 		return false;
+	/* the breakdown reference points at the palette, so it follows a rename */
+	const bool was_bd = s->breakdown[0] && strcmp(s->breakdown, s->palettes[index].name) == 0;
 	snprintf(s->palettes[index].name, sizeof(s->palettes[index].name), "%s", name);
+	if (was_bd)
+		snprintf(s->breakdown, sizeof(s->breakdown), "%s", name);
 	return true;
 }
 
@@ -150,6 +187,10 @@ bool pl_delete_palette(struct pl_set *s, int index, int *live, int *edit)
 		return false;
 	if (index < 0 || index >= s->n_palettes)
 		return false;
+
+	/* deleting the breakdown palette sets breakdowns to None (design lifecycle rules) */
+	if (s->breakdown[0] && strcmp(s->breakdown, s->palettes[index].name) == 0)
+		s->breakdown[0] = '\0';
 
 	memmove(&s->palettes[index], &s->palettes[index + 1],
 		(size_t)(s->n_palettes - index - 1) * sizeof(struct pl_palette));

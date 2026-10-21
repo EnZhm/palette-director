@@ -40,6 +40,13 @@ public:
 	explicit Scheduler(const SchedulerConfig &cfg) : rng_(cfg.seed) { reset(cfg); }
 
 	void reset(const SchedulerConfig &cfg);
+	// Live re-configuration (settings edited while running): keeps the runtime state
+	// where it is still valid. live >= 0 forces the live palette (no crossfade).
+	void reconfigure(const SchedulerConfig &cfg, int live);
+	// Mock pickNextPreview: the palette the next automatic change would pick, or -1.
+	int peek_next() const;
+	bool forced_on() const { return forced_on_; }
+	bool force_off() const { return force_off_; }
 
 	std::vector<Event> on_section_change(Section sec, uint64_t beat);
 	std::vector<Event> on_phrase(uint64_t phrase, uint64_t beat);

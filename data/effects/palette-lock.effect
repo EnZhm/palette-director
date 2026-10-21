@@ -24,10 +24,10 @@ CPU-side by rotating the uploaded colour array, never in the shader.
 uniform float4x4 ViewProj;
 uniform texture2d image;
 
-uniform float3 palA[8];
+uniform float4 palA[8];
 uniform int nA;
 uniform int modeA;
-uniform float3 palB[8];
+uniform float4 palB[8];
 uniform int nB;
 uniform int modeB;
 uniform float pfade;
@@ -67,19 +67,19 @@ float3 lumaMatch(float3 c, float l)
 float3 mapA(float l)
 {
 	if (modeA == 1)
-		return lerp(palA[0], palA[nA - 1], smoothstep(0.0, 1.0, l));
+		return lerp(palA[0].rgb, palA[nA - 1].rgb, smoothstep(0.0, 1.0, l));
 	float x = l * float(nA - 1);
 	int i = min(int(floor(x)), nA - 2);
-	return lerp(palA[i], palA[i + 1], x - float(i));
+	return lerp(palA[i].rgb, palA[i + 1].rgb, x - float(i));
 }
 
 float3 mapB(float l)
 {
 	if (modeB == 1)
-		return lerp(palB[0], palB[nB - 1], smoothstep(0.0, 1.0, l));
+		return lerp(palB[0].rgb, palB[nB - 1].rgb, smoothstep(0.0, 1.0, l));
 	float x = l * float(nB - 1);
 	int i = min(int(floor(x)), nB - 2);
-	return lerp(palB[i], palB[i + 1], x - float(i));
+	return lerp(palB[i].rgb, palB[i + 1].rgb, x - float(i));
 }
 
 float3 lockColour(float3 src)

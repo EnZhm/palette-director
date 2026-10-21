@@ -51,11 +51,11 @@ PALETTES = {
 
 
 def palette_array(name):
-    """(8,3) float64 array, zero-padded to the shader's 8-slot layout."""
-    a = np.zeros((8, 3))
+    """(8,4) float64 array, zero-padded to the shader's 8-slot float4 layout."""
+    a = np.zeros((8, 4))
     cols = [hexrgb(c) for c in PALETTES[name]]
     for i, c in enumerate(cols):
-        a[i] = c
+        a[i, :3] = c
     return a
 
 
@@ -72,6 +72,7 @@ def cpu_reference(src, palA, nA, modeA, palB, nB, modeB, pfade, amt, contrast,
         return np.clip(c * (l[..., None] / lm[..., None]), 0.0, 1.0)
 
     def map_x(pal, n, mode, l):
+        pal = pal[..., :3]  # drop the padded alpha channel
         if mode == 1:
             t = l * l * (3.0 - 2.0 * l)  # smoothstep
             return pal[0] + (pal[n - 1] - pal[0]) * t[..., None]
@@ -91,10 +92,10 @@ def cpu_reference(src, palA, nA, modeA, palB, nB, modeB, pfade, amt, contrast,
 GLSL_FRAG = """
 #version 330
 uniform sampler2D image;
-uniform vec3 palA[8];
+uniform vec4 palA[8];
 uniform int nA;
 uniform int modeA;
-uniform vec3 palB[8];
+uniform vec4 palB[8];
 uniform int nB;
 uniform int modeB;
 uniform float pfade;
@@ -106,16 +107,16 @@ out vec4 fragColor;
 float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 lumaMatch(vec3 c, float l){ return clamp(c * (l / max(luma(c), 0.002)), 0.0, 1.0); }
 vec3 mapA(float l){
-    if (modeA == 1) return mix(palA[0], palA[nA - 1], smoothstep(0.0, 1.0, l));
+    if (modeA == 1) return mix(palA[0].rgb, palA[nA - 1].rgb, smoothstep(0.0, 1.0, l));
     float x = l * float(nA - 1);
     int i = min(int(floor(x)), nA - 2);
-    return mix(palA[i], palA[i + 1], x - float(i));
+    return mix(palA[i].rgb, palA[i + 1].rgb, x - float(i));
 }
 vec3 mapB(float l){
-    if (modeB == 1) return mix(palB[0], palB[nB - 1], smoothstep(0.0, 1.0, l));
+    if (modeB == 1) return mix(palB[0].rgb, palB[nB - 1].rgb, smoothstep(0.0, 1.0, l));
     float x = l * float(nB - 1);
     int i = min(int(floor(x)), nB - 2);
-    return mix(palB[i], palB[i + 1], x - float(i));
+    return mix(palB[i].rgb, palB[i + 1].rgb, x - float(i));
 }
 vec3 lockColour(vec3 src){
     float l = clamp((luma(src) - 0.5) * contrast + 0.5, 0.0, 1.0);

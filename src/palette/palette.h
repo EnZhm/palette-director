@@ -96,8 +96,8 @@ void pl_sort_colours(struct pl_palette *p);
 void pl_reverse_colours(struct pl_palette *p);
 
 /* colour helpers */
-struct pl_colour pl_colour_from_argb(unsigned argb); /* 0xAARRGGBB */
-unsigned pl_colour_to_argb(struct pl_colour c);
+struct pl_colour pl_colour_from_obs(unsigned obs); /* OBS 0xAABBGGRR */
+unsigned pl_colour_to_obs(struct pl_colour c);
 struct pl_colour pl_colour_from_hex(const char *hex); /* "#RRGGBB" */
 void pl_colour_to_hex(struct pl_colour c, char out[PL_HEX_LEN]);
 float pl_luma(struct pl_colour c);

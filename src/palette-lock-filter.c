@@ -187,11 +187,17 @@ static void *palette_lock_create(obs_data_t *settings, obs_source_t *source)
 	f->prev = f->live;
 
 	char *effect_path = obs_module_file("effects/palette-lock.effect");
-	f->effect = gs_effect_create_from_file(effect_path, NULL);
-	bfree(effect_path);
+	char *effect_err = NULL;
+	/* Source create callbacks run outside the graphics context; without
+	 * obs_enter_graphics() gs_effect_create_from_file() returns NULL and logs
+	 * only at LOG_DEBUG (libobs/graphics/graphics.c gs_valid). */
+	obs_enter_graphics();
+	f->effect = gs_effect_create_from_file(effect_path, &effect_err);
+	obs_leave_graphics();
 
 	if (!f->effect) {
-		blog(LOG_WARNING, "[palette-lock] failed to load palette-lock.effect");
+		blog(LOG_ERROR, "[palette-lock] failed to load palette-lock.effect (%s): %s",
+		     effect_path ? effect_path : "(null path)", effect_err ? effect_err : "no error text");
 	} else {
 		f->p_palA = gs_effect_get_param_by_name(f->effect, "palA");
 		f->p_palB = gs_effect_get_param_by_name(f->effect, "palB");
@@ -205,6 +211,8 @@ static void *palette_lock_create(obs_data_t *settings, obs_source_t *source)
 		f->p_preserve = gs_effect_get_param_by_name(f->effect, "preserve");
 		blog(LOG_INFO, "[palette-lock] filter created: '%s', %d palette(s)", f->set.name, f->set.n_palettes);
 	}
+	bfree(effect_err);
+	bfree(effect_path);
 
 	return f;
 }
@@ -213,7 +221,9 @@ static void palette_lock_destroy(void *data)
 {
 	struct palette_lock_filter *f = data;
 	if (f->effect) {
+		obs_enter_graphics();
 		gs_effect_destroy(f->effect);
+		obs_leave_graphics();
 		f->effect = NULL;
 	}
 	bfree(f);
@@ -237,8 +247,11 @@ static void palette_lock_render(void *data, gs_effect_t *unused)
 	struct palette_lock_filter *f = data;
 	(void)unused;
 
-	if (!f->effect || !obs_source_process_filter_begin(f->context, GS_RGBA, OBS_NO_DIRECT_RENDERING))
+	/* Never draw nothing: on any failure pass the source through untouched. */
+	if (!f->effect || !obs_source_process_filter_begin(f->context, GS_RGBA, OBS_NO_DIRECT_RENDERING)) {
+		obs_source_skip_video_filter(f->context);
 		return;
+	}
 
 	/* A/B palettes, colours pre-rotated CPU-side */
 	struct pl_palette pa = f->set.palettes[f->prev >= 0 ? f->prev : 0];

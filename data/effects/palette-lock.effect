@@ -54,6 +54,24 @@ VertData VSDefault(VertData vert_in)
 	return vert_out;
 }
 
+/* Colour space: the filter declares OBS_SOURCE_SRGB, so under linear-sRGB
+ * rendering OBS hands us linearised texels and expects linear output. The
+ * maths and palette hex values are gamma (sRGB) space, so convert in, map,
+ * convert back. Palette uniforms are uploaded as gamma-space hex values. */
+float3 srgbToLinear(float3 c)
+{
+	float3 lo = c / 12.92;
+	float3 hi = pow((max(c, 0.0) + 0.055) / 1.055, 2.4);
+	return lerp(hi, lo, step(c, 0.04045));
+}
+
+float3 linearToSrgb(float3 c)
+{
+	float3 lo = c * 12.92;
+	float3 hi = 1.055 * pow(max(c, 0.0), 1.0 / 2.4) - 0.055;
+	return lerp(hi, lo, step(c, 0.0031308));
+}
+
 float luma(float3 c)
 {
 	return dot(c, float3(0.2126, 0.7152, 0.0722));
@@ -92,8 +110,9 @@ float3 lockColour(float3 src)
 float4 PSLockColour(VertData vert_in) : TARGET
 {
 	float4 src = image.Sample(textureSampler, vert_in.uv);
-	float3 col = lerp(src.rgb, lockColour(src.rgb), amt);
-	return float4(col, src.a);
+	float3 g = linearToSrgb(src.rgb);
+	float3 col = lerp(g, lockColour(g), amt);
+	return float4(srgbToLinear(col), src.a);
 }
 
 technique Draw

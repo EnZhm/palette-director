@@ -291,14 +291,17 @@ static obs_hotkey_id *hotkey_slot(struct palette_lock_filter *f, int i)
 
 static void register_hotkeys(struct palette_lock_filter *f, obs_data_t *settings)
 {
-	const char *fname = obs_source_get_name(f->context);
+	/* never NULL in the format calls below (gcc -O3 -Werror=format-truncation proves the
+	 * NULL path otherwise: CI Release builds failed on it) */
+	const char *fname_raw = obs_source_get_name(f->context);
+	const char *fname = fname_raw ? fname_raw : "";
 	obs_data_t *saved = obs_data_get_obj(settings, "hotkey_bindings");
 	const bool first = !obs_data_get_bool(settings, "hotkeys_initialised");
 
 	for (int i = 0; i < PD_N_NAMED_HOTKEYS + PL_MAX_PALETTE_HOTKEYS; i++) {
 		char key[64], name[192], desc[256];
 		hotkey_key(key, sizeof(key), i);
-		snprintf(name, sizeof(name), "%s.%s", key, fname ? fname : "");
+		snprintf(name, sizeof(name), "%s.%s", key, fname);
 		if (i < PD_N_NAMED_HOTKEYS)
 			snprintf(desc, sizeof(desc), "%s [%s]", obs_module_text(named_hotkeys[i].text), fname);
 		else

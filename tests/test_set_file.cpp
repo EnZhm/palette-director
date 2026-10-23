@@ -73,6 +73,11 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	/* v1.0.1 audio keys */
 	CHECK(s.input_gain_db == doctest::Approx(0.0f));
 	CHECK(s.kick_sensitivity == doctest::Approx(0.6f));
+	/* v1.0.1 drop colour cycle: on, 50%, 1 bar, 1/8 */
+	CHECK(s.drop_cycle == true);
+	CHECK(s.drop_cycle_chance == doctest::Approx(0.5f));
+	CHECK(s.drop_cycle_bars == 1);
+	CHECK(s.drop_cycle_steps_per_beat == 2);
 }
 
 TEST_CASE("load -> save round-trips the bundled preset byte for byte")
@@ -236,7 +241,7 @@ TEST_CASE("set file names follow the mock's slug rule")
 TEST_CASE("v1.0.1 audio keys are optional on load (v1.0.0 files keep today's behaviour) and round-trip")
 {
 	std::string src = slurp(kBundled);
-	const auto a = src.find(",\n    \"input_gain_db\"");
+	const auto a = src.find(",\n    \"input_gain_db\""); // strip every v1.0.1 director key
 	REQUIRE(a != std::string::npos);
 	const auto b = src.find("\n  }\n}", a);
 	std::string old = src.substr(0, a) + src.substr(b); // a v1.0.0-style file
@@ -258,4 +263,38 @@ TEST_CASE("v1.0.1 audio keys are optional on load (v1.0.0 files keep today's beh
 	hot.replace(hot.find("\"input_gain_db\": 0"), 18, "\"input_gain_db\": 99");
 	CHECK_FALSE(pd_set_parse(hot.c_str(), &s2, err, sizeof(err)));
 	CHECK(std::string(err).find("input_gain_db") != std::string::npos);
+}
+
+TEST_CASE("v1.0.1 drop_cycle keys: missing = disabled, every rate round-trips, bad rate rejected")
+{
+	const std::string src = slurp(kBundled);
+	const auto a = src.find(",\n    \"drop_cycle\"");
+	REQUIRE(a != std::string::npos);
+	const auto b = src.find("\n  }\n}", a);
+	const std::string old = src.substr(0, a) + src.substr(b);
+	struct pl_set s;
+	char err[256] = {0};
+	REQUIRE_MESSAGE(pd_set_parse(old.c_str(), &s, err, sizeof(err)), err);
+	CHECK(s.drop_cycle == false); // older files: exactly as before
+	for (int spb : {1, 2, 4}) {
+		s.drop_cycle = true;
+		s.drop_cycle_chance = 0.25f;
+		s.drop_cycle_bars = 3;
+		s.drop_cycle_steps_per_beat = spb;
+		char *out = pd_set_write(&s);
+		struct pl_set s2;
+		REQUIRE(pd_set_parse(out, &s2, err, sizeof(err)));
+		CHECK(s2.drop_cycle);
+		CHECK(s2.drop_cycle_chance == doctest::Approx(0.25f));
+		CHECK(s2.drop_cycle_bars == 3);
+		CHECK(s2.drop_cycle_steps_per_beat == spb);
+		char *out2 = pd_set_write(&s2);
+		CHECK(std::string(out) == std::string(out2));
+		pd_set_free(out);
+		pd_set_free(out2);
+	}
+	std::string bad = src;
+	bad.replace(bad.find("\"1/8\""), 5, "\"1/3\"");
+	CHECK_FALSE(pd_set_parse(bad.c_str(), &s, err, sizeof(err)));
+	CHECK(std::string(err).find("drop_cycle rate") != std::string::npos);
 }

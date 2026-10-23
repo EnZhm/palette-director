@@ -125,6 +125,12 @@ struct pl_set {
 	/* v1.0.1 audio sensitivity (set-file keys optional; defaults = v1.0.0 behaviour) */
 	float input_gain_db;    /* -12..+24 dB, applied before analysis */
 	float kick_sensitivity; /* 0..1 (0-100%), default 0.6 = v1.0.0's 0.4 x reference */
+
+	/* v1.0.1 drop colour cycle (lock behaviour; set-file keys optional, missing = disabled) */
+	bool drop_cycle;
+	float drop_cycle_chance;       /* 0..1, default 0.5 */
+	int drop_cycle_bars;           /* 1..4, default 1 */
+	int drop_cycle_steps_per_beat; /* 1 = "1/4", 2 = "1/8" (default), 4 = "1/16" */
 };
 
 /* Shader blend amount (v1 amendments): coverage x breathing x lock_mix, mock fade model.

@@ -148,3 +148,45 @@ cleared the bar and the Director sat in BREAKDOWN with no drop.
 - **Dock meter**: input level in dBFS after gain (CLIP above -1 dBFS, held 1.5 s), a bass bar with the
   kick threshold marked, and a kick light that flashes on each detected kick. Published in
   `DirectorState` and copied to the dock under the existing view mutex; nothing new on the render thread.
+
+### 11. Drop colour cycle (new lock behaviour, requested by Ian)
+
+When a DROP follows a BREAKDOWN (the same event that does "drop after breakdown"), the Director may hard-cut
+through the palettes for a short time, then settle.
+
+- Set-file keys under `director.drop_cycle`: `enabled` (bool), `chance` 0-1 (default 0.5), `bars` 1-4
+  (default 1), `rate` "1/4" | "1/8" | "1/16" (default "1/8" = 2 cuts per beat). The object is optional;
+  missing = disabled, so older files behave exactly as before.
+- The seeded RNG is rolled only when the behaviour is enabled, so with it disabled every event log is
+  identical to v1.0.0's (checked by a digest A/B against the commit before it, and by a unit test). The
+  roll is logged, e.g. `drop cycle (0.31 < 0.50): 1 bar at 1/8, 8 cuts`.
+- While cycling: hard cuts (pfade 1, crossfade_beats ignored), stepping through seeded shuffles of the
+  normal pool (the breakdown palette is excluded, never the same palette twice in a row). The steps are
+  driven by the beat tracker's fractional beat on every analysis hop, not only on whole beats. Rotation
+  offset resets per cut, as go_live does. Phrase-triggered changes and rotation wait until it ends.
+- At the end it lands on the palette the drop would have picked anyway, with the normal crossfade, and
+  logs `drop cycle over -> <name>`.
+- The lock is held on during the cycle. If off-on-drop is enabled and the cycle fires, the cycle replaces
+  the raw bars for that drop (logged); if it does not fire, off-on-drop behaves as before.
+- PANIC, Pause, Force off and manual Next / Prev / Go live cancel a running cycle at once (a manual pick
+  wins). It is a lock behaviour, not a palette-change trigger, so it also runs in Manual-only mode.
+- Dock: Director tab controls with help text; a "DROP CYCLE" status chip while it runs; the live pad
+  flashes with each cut; the now line says so. The properties' Advanced group has the same controls.
+- Techno Apocalypse: enabled, 50%, 1 bar, 1/8.
+
+### 12. Preset ownership and data-driven preset tests
+
+The Techno Apocalypse palettes are being redesigned by kalessin on TechnoCore. In v1.0.1 only settings
+keys were added to `data/sets/techno-apocalypse.json` (`input_gain_db`, `kick_sensitivity`, `drop_cycle`);
+the palettes array is unchanged. The preset tests are data-driven so the palettes array can be swapped
+in a follow-up commit without touching code:
+
+- `tests/test_set_file.cpp` "bundled Techno Apocalypse loads with every palette, mode and setting" checks
+  palette structure only (1-16 palettes, unique non-empty names, valid mode, 2-8 colours, the breakdown
+  palette resolves by name) and pins the settings values (colour, palette changes, director, v1.0.1 keys).
+  It also pins the breakdown palette NAME "Spectrum Fallout"; if the new palettes rename it, update that
+  one line (or the set's `breakdown_palette`).
+- "load -> save round-trips the bundled preset byte for byte" compares against the file itself; there is
+  no hard-coded hash.
+- After merge kalessin must re-sync
+  `/mnt/storage/media/Visuals/palette-director/sets/Techno-Apocalypse.json` from the repo file.

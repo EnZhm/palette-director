@@ -223,6 +223,10 @@ pd::SetFile to_setfile(const struct pl_set &s)
 	f.director.seed = s.seed;
 	f.director.input_gain_db = s.input_gain_db;
 	f.director.kick_sensitivity = s.kick_sensitivity;
+	f.director.drop_cycle = s.drop_cycle;
+	f.director.drop_cycle_chance = s.drop_cycle_chance;
+	f.director.drop_cycle_bars = s.drop_cycle_bars;
+	f.director.drop_cycle_steps_per_beat = s.drop_cycle_steps_per_beat;
 	return f;
 }
 
@@ -593,7 +597,7 @@ static void worker_main(pd_host *h)
 			     (unsigned long long)st.beat, (unsigned long long)st.phrase, lname, mix, st.input_db,
 			     st.kicks, h->set.input_gain_db, (int)lroundf(h->set.kick_sensitivity * 100.0f),
 			     st.silent ? " (silent: fallback bpm)" : "",
-			     st.panic ? " PANIC" : (st.paused ? " PAUSED" : ""),
+			     st.panic ? " PANIC" : (st.paused ? " PAUSED" : (st.drop_cycle ? " DROP CYCLE" : "")),
 			     h->audio_weak ? "" : " (no audio source)");
 		}
 	}

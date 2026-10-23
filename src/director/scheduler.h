@@ -31,6 +31,10 @@ struct SchedulerConfig {
 	int drop_raw_bars = 2;
 	bool rotation = false;
 	uint32_t seed = 7;
+	bool drop_cycle = false;
+	float drop_cycle_chance = 0.5f;
+	int drop_cycle_bars = 1;
+	int drop_cycle_steps_per_beat = 2;
 };
 
 // Palette-change scheduler + lock behaviours -> mix target + pfade (spec 4.2).
@@ -53,6 +57,9 @@ public:
 	std::vector<Event> on_beat(uint64_t beat);
 	std::vector<Event> command(Command cmd, int palette_index, uint64_t beat);
 	void advance_pfade(double dt, double bpm);
+	// v1.0.1: sub-beat clock (fractional beats), called every analysis hop; drives the drop cycle.
+	std::vector<Event> on_tick(double beats);
+	bool drop_cycle_active() const { return cycle_active_; }
 
 	double mix_target(uint64_t beat) const;
 	bool lock_on(uint64_t beat) const { return mix_target(beat) >= 0.5f; }
@@ -70,6 +77,9 @@ private:
 	int pick_next(int dir);
 	std::vector<Event> go_live(int i, const std::string &why, uint64_t beat);
 	void release_panic();
+	void start_drop_cycle(uint64_t beat, int target, std::vector<Event> &out);
+	void cycle_cut(int i, int step, uint64_t beat, std::vector<Event> &out);
+	void cancel_drop_cycle(const char *why, uint64_t beat, std::vector<Event> &out);
 
 	SchedulerConfig cfg_;
 	Mulberry32 rng_;
@@ -89,6 +99,13 @@ private:
 	bool panic_ = false; // PANIC latch (v1.0.1: a toggle; PANIC again or Resume releases it)
 	bool force_off_ = false;
 	bool forced_on_ = false;
+	// drop colour cycle
+	bool cycle_active_ = false;
+	double cycle_start_ = 0.0;   // beat the cycle started on (the drop downbeat)
+	int cycle_steps_ = 0;        // hard cuts in the cycle
+	int cycle_next_ = 0;         // next step to cut
+	int cycle_target_ = -1;      // palette the drop would have picked (landing)
+	std::vector<int> cycle_seq_; // palettes for each step
 };
 
 } // namespace pd

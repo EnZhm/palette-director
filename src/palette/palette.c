@@ -55,6 +55,10 @@ void pl_set_init(struct pl_set *s)
 	s->seed = 7;
 	s->input_gain_db = 0.0f;
 	s->kick_sensitivity = 0.6f;
+	s->drop_cycle = false;
+	s->drop_cycle_chance = 0.5f;
+	s->drop_cycle_bars = 1;
+	s->drop_cycle_steps_per_beat = 2;
 }
 
 static float clamp01(float v)

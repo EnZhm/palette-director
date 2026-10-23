@@ -116,6 +116,10 @@ static void write_set(obs_data_t *s, const struct pl_set *set, bool def)
 	SET_INT(s, "seed", (long long)set->seed);
 	SET_DOUBLE(s, "input_gain_db", set->input_gain_db);
 	SET_DOUBLE(s, "kick_sensitivity", set->kick_sensitivity);
+	SET_BOOL(s, "drop_cycle", set->drop_cycle);
+	SET_DOUBLE(s, "drop_cycle_chance", set->drop_cycle_chance);
+	SET_INT(s, "drop_cycle_bars", set->drop_cycle_bars);
+	SET_INT(s, "drop_cycle_rate", set->drop_cycle_steps_per_beat);
 
 	for (int i = 0; i < set->n_palettes; i++) {
 		char key[64];
@@ -197,6 +201,13 @@ static void set_from_settings(obs_data_t *s, struct pl_set *set)
 	set->seed = (unsigned)clampi(obs_data_get_int(s, "seed"), 0, 99999);
 	set->input_gain_db = clampf(obs_data_get_double(s, "input_gain_db"), -12.0f, 24.0f);
 	set->kick_sensitivity = clampf(obs_data_get_double(s, "kick_sensitivity"), 0.0f, 1.0f);
+	set->drop_cycle = obs_data_get_bool(s, "drop_cycle");
+	set->drop_cycle_chance = clampf(obs_data_get_double(s, "drop_cycle_chance"), 0.0f, 1.0f);
+	set->drop_cycle_bars = clampi(obs_data_get_int(s, "drop_cycle_bars"), 1, 4);
+	{
+		const int r = (int)obs_data_get_int(s, "drop_cycle_rate");
+		set->drop_cycle_steps_per_beat = (r == 1 || r == 4) ? r : 2;
+	}
 
 	for (int i = 0; i < set->n_palettes; i++) {
 		char key[64];
@@ -1051,6 +1062,10 @@ static bool on_behaviour_changed(void *priv, obs_properties_t *props, obs_proper
 	obs_property_set_visible(obs_properties_get(props, "bars_max"), ro);
 	obs_property_set_visible(obs_properties_get(props, "cooldown_phrases"), ro);
 	obs_property_set_visible(obs_properties_get(props, "drop_bars"), obs_data_get_bool(settings, "off_on_drop"));
+	const bool dc = obs_data_get_bool(settings, "drop_cycle");
+	obs_property_set_visible(obs_properties_get(props, "drop_cycle_chance"), dc);
+	obs_property_set_visible(obs_properties_get(props, "drop_cycle_bars"), dc);
+	obs_property_set_visible(obs_properties_get(props, "drop_cycle_rate"), dc);
 	return true;
 }
 
@@ -1260,6 +1275,20 @@ static obs_properties_t *palette_lock_properties(void *data)
 	obs_property_set_modified_callback2(pod, on_behaviour_changed, f);
 	b0 = obs_properties_add_int_slider(gbeh, "drop_bars", obs_module_text("RawBarsAtDrop"), 1, 8, 1);
 	obs_property_set_visible(b0, f->set.off_on_drop);
+	obs_property_t *pdc = obs_properties_add_bool(gbeh, "drop_cycle", obs_module_text("DropCycle"));
+	obs_property_set_long_description(pdc, obs_module_text("DropCycle.Help"));
+	obs_property_set_modified_callback2(pdc, on_behaviour_changed, f);
+	b0 = obs_properties_add_float_slider(gbeh, "drop_cycle_chance", obs_module_text("DropCycleChance"), 0.0, 1.0,
+					     0.01);
+	obs_property_set_visible(b0, f->set.drop_cycle);
+	b0 = obs_properties_add_int_slider(gbeh, "drop_cycle_bars", obs_module_text("DropCycleBars"), 1, 4, 1);
+	obs_property_set_visible(b0, f->set.drop_cycle);
+	b0 = obs_properties_add_list(gbeh, "drop_cycle_rate", obs_module_text("DropCycleRate"), OBS_COMBO_TYPE_LIST,
+				     OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(b0, obs_module_text("DropCycleRate.Quarter"), 1);
+	obs_property_list_add_int(b0, obs_module_text("DropCycleRate.Eighth"), 2);
+	obs_property_list_add_int(b0, obs_module_text("DropCycleRate.Sixteenth"), 4);
+	obs_property_set_visible(b0, f->set.drop_cycle);
 	obs_properties_add_float_slider(gbeh, "breathing", obs_module_text("Breathing"), 0.0, 1.0, 0.01);
 	obs_properties_add_bool(gbeh, "rotation", obs_module_text("Rotation"));
 	obs_properties_add_int(gbeh, "seed", obs_module_text("Seed"), 0, 99999, 1);

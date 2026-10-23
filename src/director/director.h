@@ -50,6 +50,12 @@ struct DirectorConfig {
 	// v1.0.1 audio sensitivity (set-file keys optional on load; defaults = v1.0.0 behaviour)
 	float input_gain_db = 0.0f;    // -12..+24 dB, applied to the mono downmix before analysis
 	float kick_sensitivity = 0.6f; // 0..1 (shown 0-100%); see kick_threshold_for()
+	// v1.0.1 drop colour cycle (lock behaviour): on a drop after a breakdown, maybe hard-cut through
+	// the normal palettes for a few bars, then land on the palette the drop would have picked.
+	bool drop_cycle = false;           // set-file key missing = disabled (old files unchanged)
+	float drop_cycle_chance = 0.5f;    // 0..1
+	int drop_cycle_bars = 1;           // 1..4
+	int drop_cycle_steps_per_beat = 2; // 1 ("1/4"), 2 ("1/8"), 4 ("1/16")
 };
 
 // v1.0.1: kick threshold as a fraction of the adaptive bass reference.
@@ -101,6 +107,7 @@ struct DirectorState {
 	float bass_level = 0.0f;     // bass envelope / adaptive reference (0..1)
 	float kick_threshold = 0.4f; // the kick threshold on the same scale (marker on the bass bar)
 	uint32_t kicks = 0;          // detected kick count (the dock flashes its kick light on change)
+	bool drop_cycle = false;     // v1.0.1: a drop colour cycle is running (lock held on)
 };
 
 // ---- Director decision log (feeds the dock log in P5 and the offline tests) ----

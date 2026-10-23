@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 
 namespace pd {
@@ -25,6 +26,8 @@ void Scheduler::reset(const SchedulerConfig &cfg)
 	panic_ = false;
 	force_off_ = false;
 	forced_on_ = false;
+	cycle_active_ = false;
+	cycle_seq_.clear();
 }
 
 void Scheduler::reconfigure(const SchedulerConfig &cfg, int live)
@@ -38,6 +41,11 @@ void Scheduler::reconfigure(const SchedulerConfig &cfg, int live)
 	if (structure || reseed) {
 		order_.clear();
 		shuffle_cycle_.clear();
+	}
+	if (structure || !cfg_.drop_cycle || !cfg_.enabled) {
+		// palette indices may have moved (or the behaviour was switched off): stop any cycle
+		cycle_active_ = false;
+		cycle_seq_.clear();
 	}
 	if (structure) {
 		// indices may have moved: drop the outgoing palette instead of fading from a stale one
@@ -194,6 +202,8 @@ std::vector<Event> Scheduler::on_section_change(Section sec, uint64_t beat)
 	if (!cfg_.enabled || paused_)
 		return {};
 	std::vector<Event> out;
+	if (cycle_active_)
+		cancel_drop_cycle("section change", beat, out);
 
 	if (sec == Section::Breakdown) {
 		if (cfg_.off_on_breakdown) {
@@ -210,15 +220,52 @@ std::vector<Event> Scheduler::on_section_change(Section sec, uint64_t beat)
 			out.insert(out.end(), evs.begin(), evs.end());
 		}
 	} else if (sec == Section::Drop) {
+		bool cycling = false;
 		if (bd_active_) {
 			bd_active_ = false;
-			auto evs = go_live(pick_next(1), "drop after breakdown", beat);
-			out.insert(out.end(), evs.begin(), evs.end());
+			const int target = pick_next(1);
+			/* v1.0.1 drop colour cycle: roll the seeded RNG ONLY when enabled, so a set without it
+			 * replays exactly the v1.0.0 decisions */
+			if (cfg_.drop_cycle) {
+				const double r = rng_.next();
+				const int steps = std::max(1, cfg_.drop_cycle_bars) * 4 *
+						  std::max(1, cfg_.drop_cycle_steps_per_beat);
+				char why[96];
+				std::snprintf(why, sizeof(why), "drop cycle (%.2f %s %.2f): %d bar%s at 1/%d", r,
+					      r < cfg_.drop_cycle_chance ? "<" : ">=",
+					      static_cast<double>(cfg_.drop_cycle_chance), cfg_.drop_cycle_bars,
+					      cfg_.drop_cycle_bars > 1 ? "s" : "", 4 * cfg_.drop_cycle_steps_per_beat);
+				Event e;
+				e.type = Event::Type::Command;
+				e.beat = beat;
+				e.detail = r < cfg_.drop_cycle_chance
+						   ? std::string(why) + ", " + std::to_string(steps) + " cuts"
+						   : std::string(why) + ": no cycle";
+				out.push_back(e);
+				if (r < cfg_.drop_cycle_chance && normal_idx().size() >= 2) {
+					start_drop_cycle(beat, target, out);
+					cycling = true;
+				}
+			}
+			if (!cycling) {
+				auto evs = go_live(target, "drop after breakdown", beat);
+				out.insert(out.end(), evs.begin(), evs.end());
+			}
 		} else if (cfg_.trigger == ChangeTrigger::Drop) {
 			auto evs = go_live(pick_next(1), "drop", beat);
 			out.insert(out.end(), evs.begin(), evs.end());
 		}
-		if (cfg_.off_on_drop) {
+		if (cfg_.off_on_drop && cycling) {
+			Event e;
+			e.type = Event::Type::Command;
+			e.beat = beat;
+			e.detail = "drop cycle replaces the raw bars for this drop (lock held on)";
+			out.push_back(e);
+			if (off_reason_ == "breakdown") {
+				off_until_ = -1;
+				off_reason_.clear();
+			}
+		} else if (cfg_.off_on_drop) {
 			off_until_ = static_cast<int64_t>(beat) + cfg_.drop_raw_bars * 4;
 			off_reason_ = "drop";
 			Event e;
@@ -245,7 +292,7 @@ std::vector<Event> Scheduler::on_phrase(uint64_t phrase, uint64_t beat)
 		return {};
 	std::vector<Event> out;
 
-	if (cfg_.rotation && !forced_on_) {
+	if (cfg_.rotation && !forced_on_ && !cycle_active_) {
 		int n = (live_ >= 0 && live_ < static_cast<int>(cfg_.colour_counts.size()))
 				? cfg_.colour_counts[static_cast<std::size_t>(live_)]
 				: 1;
@@ -259,7 +306,7 @@ std::vector<Event> Scheduler::on_phrase(uint64_t phrase, uint64_t beat)
 		out.push_back(e);
 	}
 
-	if (!bd_active_) {
+	if (!bd_active_ && !cycle_active_) {
 		if (cfg_.trigger == ChangeTrigger::Phrases &&
 		    (phrase % static_cast<uint64_t>(cfg_.every_phrases)) == 0) {
 			auto evs =
@@ -331,6 +378,27 @@ std::vector<Event> Scheduler::command(Command cmd, int palette_index, uint64_t b
 		e.detail = s;
 		out.push_back(e);
 	};
+
+	if (cycle_active_) {
+		switch (cmd) {
+		case Command::ForceOff:
+			cancel_drop_cycle("force off", beat, out);
+			break;
+		case Command::Pause:
+			cancel_drop_cycle("pause", beat, out);
+			break;
+		case Command::Panic:
+			cancel_drop_cycle("PANIC", beat, out);
+			break;
+		case Command::Next:
+		case Command::Prev:
+		case Command::GoLive:
+			cancel_drop_cycle("manual pick wins", beat, out);
+			break;
+		default:
+			break;
+		}
+	}
 
 	switch (cmd) {
 	case Command::ForceOn:
@@ -410,6 +478,114 @@ std::vector<Event> Scheduler::command(Command cmd, int palette_index, uint64_t b
 	return out;
 }
 
+void Scheduler::start_drop_cycle(uint64_t beat, int target, std::vector<Event> &out)
+{
+	const std::vector<int> pool = normal_idx();
+	const int spb = std::max(1, cfg_.drop_cycle_steps_per_beat);
+	cycle_steps_ = std::max(1, cfg_.drop_cycle_bars) * 4 * spb;
+	cycle_start_ = static_cast<double>(beat);
+	cycle_target_ = target;
+	cycle_seq_.clear();
+	/* seeded shuffles of the normal pool (breakdown palette excluded), no palette twice in a row,
+	 * never the live palette first, and the last cut is not the landing palette (so the landing is a
+	 * real change with the normal crossfade) */
+	int last = live_;
+	while (static_cast<int>(cycle_seq_.size()) < cycle_steps_) {
+		std::vector<int> perm = pool;
+		for (std::size_t i = perm.size(); i-- > 1;) {
+			const std::size_t j = static_cast<std::size_t>(rng_.next() * static_cast<double>(i + 1));
+			std::swap(perm[i], perm[j]);
+		}
+		if (perm.front() == last)
+			std::rotate(perm.begin(), perm.begin() + 1, perm.end());
+		for (int p : perm) {
+			if (static_cast<int>(cycle_seq_.size()) >= cycle_steps_)
+				break;
+			cycle_seq_.push_back(p);
+			last = p;
+		}
+	}
+	/* the last cut must not be the landing palette (the landing is then a real change) */
+	if (cycle_seq_.back() == target) {
+		const int before = cycle_seq_.size() >= 2 ? cycle_seq_[cycle_seq_.size() - 2] : live_;
+		for (int p : pool) {
+			if (p != target && p != before) {
+				cycle_seq_.back() = p;
+				break;
+			}
+		}
+	}
+	cycle_active_ = true;
+	cycle_next_ = 0;
+	off_until_ = -1; // the lock is held on for the cycle
+	cycle_cut(cycle_seq_[0], 0, beat, out);
+	cycle_next_ = 1;
+}
+
+void Scheduler::cycle_cut(int i, int step, uint64_t beat, std::vector<Event> &out)
+{
+	if (i == live_)
+		return;
+	prev_ = live_;
+	live_ = i;
+	pfade_ = 1.0f; // hard cut, whatever crossfade_beats says
+	rot_ = 0;
+	Event e;
+	e.type = Event::Type::PaletteChange;
+	e.beat = beat;
+	e.palette = i;
+	e.prev_palette = prev_;
+	const std::string nm = (i >= 0 && i < static_cast<int>(cfg_.names.size()))
+				       ? cfg_.names[static_cast<std::size_t>(i)]
+				       : std::to_string(i);
+	e.detail = "palette -> " + nm + " (drop cycle " + std::to_string(step + 1) + "/" +
+		   std::to_string(cycle_steps_) + ", cut)";
+	out.push_back(e);
+}
+
+void Scheduler::cancel_drop_cycle(const char *why, uint64_t beat, std::vector<Event> &out)
+{
+	cycle_active_ = false;
+	cycle_seq_.clear();
+	Event e;
+	e.type = Event::Type::Command;
+	e.beat = beat;
+	e.detail = std::string("drop cycle cancelled (") + why + ")";
+	out.push_back(e);
+}
+
+std::vector<Event> Scheduler::on_tick(double beats)
+{
+	if (!cycle_active_)
+		return {};
+	std::vector<Event> out;
+	const int spb = std::max(1, cfg_.drop_cycle_steps_per_beat);
+	const double rel = beats - cycle_start_;
+	const uint64_t b = static_cast<uint64_t>(std::max(0.0, std::floor(beats)));
+	if (rel >= static_cast<double>(cycle_steps_) / spb) {
+		cycle_active_ = false;
+		cycle_seq_.clear();
+		const int t = (cycle_target_ >= 0 && cycle_target_ < cfg_.palette_count) ? cycle_target_ : pick_next(1);
+		Event e;
+		e.type = Event::Type::Command;
+		e.beat = b;
+		const std::string nm = (t >= 0 && t < static_cast<int>(cfg_.names.size()))
+					       ? cfg_.names[static_cast<std::size_t>(t)]
+					       : std::to_string(t);
+		e.detail = "drop cycle over -> " + nm;
+		out.push_back(e);
+		auto evs = go_live(t, "drop after breakdown", b);
+		out.insert(out.end(), evs.begin(), evs.end());
+		return out;
+	}
+	const int due = std::min(cycle_steps_ - 1, static_cast<int>(std::floor(rel * spb)));
+	while (cycle_next_ <= due) {
+		cycle_cut(cycle_seq_[static_cast<std::size_t>(cycle_next_)], cycle_next_, b, out);
+		cycle_next_++;
+	}
+	return out;
+}
+
 void Scheduler::release_panic()
 {
 	panic_ = false;
@@ -430,6 +606,8 @@ double Scheduler::mix_target(uint64_t beat) const
 {
 	if (panic_)
 		return 1.0; // PANIC holds the lock on, whatever force on/off say
+	if (cycle_active_)
+		return 1.0; // the drop cycle holds the lock on (force off / pause / panic cancel it)
 	double t = 1.0;
 	if (cfg_.enabled && !paused_ && off_until_ > static_cast<int64_t>(beat))
 		t = 0.0;

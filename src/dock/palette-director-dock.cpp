@@ -165,6 +165,7 @@ public:
 	struct pl_palette pal = {};
 	int index = 0;
 	bool live = false, next = false, breakdown = false;
+	bool flash = false; // v1.0.1 drop cycle: the live pad flashes with each cut
 	float pfade = 1.0f;
 	std::function<void(int)> on_tap;
 
@@ -185,6 +186,11 @@ protected:
 		QPainterPath bg;
 		bg.addRoundedRect(r, 7, 7);
 		p.fillPath(bg, pl.color(QPalette::Base));
+		if (live && flash) {
+			QColor fc = pl.color(QPalette::Highlight);
+			fc.setAlpha(110);
+			p.fillPath(bg, fc);
+		}
 		QPen pen(live ? hl : (next ? pl.color(QPalette::WindowText) : pl.color(QPalette::Mid)));
 		pen.setWidthF(live ? 3.0 : (next ? 1.5 : 1.0));
 		if (next && !live)
@@ -1162,6 +1168,24 @@ protected:
 		drOffBd = add_check(form, w, "OffOnBreakdown", &pl_set::off_on_breakdown, "off on breakdown");
 		drOffDrop = add_check(form, w, "OffOnDrop", &pl_set::off_on_drop, "off on drop");
 		drDropBars = add_int(form, w, "RawBarsAtDrop", 1, 8, &pl_set::drop_bars, "raw bars at drop");
+		/* v1.0.1 drop colour cycle */
+		drCycle = add_check(form, w, "DropCycle", &pl_set::drop_cycle, "drop cycle");
+		form->addRow(help_label("DropCycle.Help", w));
+		drCycleChance = make_slider(
+			form, w, "DropCycleChance", "DropCycleChance.Help", 0, 100, true,
+			[](struct pl_set &s, double v) { s.drop_cycle_chance = static_cast<float>(v); },
+			"drop cycle chance");
+		drCycleBars = add_int(form, w, "DropCycleBars", 1, 4, &pl_set::drop_cycle_bars, "drop cycle bars");
+		drCycleRate = new QComboBox(w);
+		drCycleRate->addItem(T("DropCycleRate.Quarter"), 1);
+		drCycleRate->addItem(T("DropCycleRate.Eighth"), 2);
+		drCycleRate->addItem(T("DropCycleRate.Sixteenth"), 4);
+		form->addRow(T("DropCycleRate"), drCycleRate);
+		QObject::connect(drCycleRate, &QComboBox::activated, this, [this](int i) {
+			struct pl_set ns = model;
+			ns.drop_cycle_steps_per_beat = drCycleRate->itemData(i).toInt();
+			commit(ns, -1, "drop cycle rate -> " + drCycleRate->itemText(i));
+		});
 		drBreath = make_slider(
 			form, w, "Breathing", "Dock.BreathingHelp", 0, 100, true,
 			[](struct pl_set &s, double v) { s.breathing = static_cast<float>(v); }, "breathing");
@@ -1603,6 +1627,13 @@ private:
 		set_check(drOffDrop, s.off_on_drop);
 		set_spin(drDropBars, s.drop_bars);
 		set_row_visible(drDropBars, s.off_on_drop);
+		set_check(drCycle, s.drop_cycle);
+		set_slider(drCycleChance, s.drop_cycle_chance);
+		set_spin(drCycleBars, s.drop_cycle_bars);
+		set_combo_data(drCycleRate, s.drop_cycle_steps_per_beat);
+		set_row_visible(drCycleChance.s, s.drop_cycle);
+		set_row_visible(drCycleBars, s.drop_cycle);
+		set_row_visible(drCycleRate, s.drop_cycle);
 		set_slider(drBreath, s.breathing);
 		set_slider(drGain, s.input_gain_db);
 		set_slider(drSens, s.kick_sensitivity);
@@ -1832,6 +1863,8 @@ private:
 	{
 		if (st.panic)
 			return T("Dock.NowPanic");
+		if (st.drop_cycle)
+			return T("Dock.NowDropCycle");
 		if (!st.enabled)
 			return T("Dock.NowDirectorOff");
 		if (st.paused)
@@ -1895,6 +1928,9 @@ private:
 		if (st.panic) {
 			state = "PANIC";
 			stc = QColor(255, 60, 100);
+		} else if (st.drop_cycle) {
+			state = "DROP CYCLE";
+			stc = QColor(200, 80, 255);
 		} else if (st.force_off) {
 			state = "FORCED OFF";
 			stc = QColor(255, 60, 100);
@@ -1963,8 +1999,15 @@ private:
 				pads[i]->show();
 			}
 		}
+		/* drop cycle: flash the live pad on each cut (~100 ms) */
+		if (st.drop_cycle && st.live_palette != cycle_live_seen)
+			cycle_flash = 3;
+		else if (cycle_flash > 0)
+			cycle_flash--;
+		cycle_live_seen = st.drop_cycle ? st.live_palette : -1;
 		for (int i = 0; i < set.n_palettes; i++) {
 			PadWidget *pw = pads[i];
+			pw->flash = cycle_flash > 0;
 			pw->pal = set.palettes[i];
 			pw->live = i == st.live_palette;
 			pw->next = i == st.next_palette && i != st.live_palette;
@@ -2055,7 +2098,12 @@ private:
 	QSpinBox *drBpm = nullptr, *drBarsMin = nullptr, *drBarsMax = nullptr, *drCool = nullptr, *drDropBars = nullptr,
 		 *drSeed = nullptr;
 	QDoubleSpinBox *drFade = nullptr;
-	ValueSlider drRandChance, drBreath, drGain, drSens;
+	ValueSlider drRandChance, drBreath, drGain, drSens, drCycleChance;
+	QCheckBox *drCycle = nullptr;
+	QSpinBox *drCycleBars = nullptr;
+	QComboBox *drCycleRate = nullptr;
+	int cycle_live_seen = -1;
+	int cycle_flash = 0;
 	AudioMeter *meter = nullptr;
 	uint32_t kicks_seen = 0;
 	/* log tab */

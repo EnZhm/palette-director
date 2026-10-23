@@ -82,6 +82,11 @@ SchedulerConfig make_sched_cfg(const SetFile &s)
 	c.drop_raw_bars = s.director.drop_raw_bars;
 	c.rotation = s.director.rotation;
 	c.seed = s.director.seed;
+	c.drop_cycle = s.director.drop_cycle;
+	c.drop_cycle_chance = s.director.drop_cycle_chance;
+	c.drop_cycle_bars = std::max(1, std::min(4, s.director.drop_cycle_bars));
+	const int spb = s.director.drop_cycle_steps_per_beat;
+	c.drop_cycle_steps_per_beat = (spb == 1 || spb == 4) ? spb : 2;
 	return c;
 }
 } // namespace
@@ -252,6 +257,7 @@ struct Director::Impl {
 		st.bass_level = st.bass;
 		st.kick_threshold = kick_thr_;
 		st.kicks = kicks_;
+		st.drop_cycle = scheduler_.drop_cycle_active();
 		return st;
 	}
 
@@ -354,6 +360,8 @@ void Director::push_audio(const float *mono, std::size_t frames, uint32_t sample
 		const int64_t b1 = static_cast<int64_t>(std::floor(after));
 		for (int64_t b = b0 + 1; b <= b1; ++b)
 			d.on_beat(static_cast<uint64_t>(b));
+		if (d.scheduler_.drop_cycle_active())
+			d.append_events(d.scheduler_.on_tick(after));
 
 		d.scheduler_.advance_pfade(dt, d.tracker_.bpm());
 

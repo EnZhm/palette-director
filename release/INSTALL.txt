@@ -2,8 +2,8 @@ Palette Director 1.0.1 for OBS Studio 32.2.x (Windows x64)
 ==========================================================
 
 New in 1.0.1: PANIC is a toggle (press it again, or Resume, to release),
-an Input gain and a Kick sensitivity control, and an audio meter in the
-panel (see sections 5 and 6).
+an Input gain and a Kick sensitivity control, an audio meter in the
+panel (see sections 5 and 6), and the drop colour cycle (section 3).
 
 Palette Director locks a Synesthesia (Spout) VJ feed to a set of colour
 palettes inside OBS, and reacts to the music from your DJ mixer: palettes
@@ -90,9 +90,20 @@ Below it, "Set-up" opens the tabs (the panel remembers if it is open):
   Changes   when palettes change (every drop, every N phrases, random,
             manual), order (list or shuffle), crossfade, breakdown palette.
   Director  enabled, audio source, fallback BPM, phrase length, lock
-            fade, Input gain, Kick sensitivity, and the lock behaviours (random off, off on breakdown,
+            fade, Input gain, Kick sensitivity, and the lock behaviours
+            (including the drop colour cycle) (random off, off on breakdown,
             off on drop, breathing, colour rotation, seed).
   Log       the Director's full decision log.
+
+Drop colour cycle (Director tab, lock behaviours): when the drop lands
+after a breakdown, the Director sometimes flashes through the palettes
+with hard cuts for a bar (Chance, Length 1-4 bars, Speed 1/4, 1/8 or
+1/16 of a beat), with the lock held on, then settles on the next palette.
+The panel shows a DROP CYCLE chip and the live pad flashes. PANIC, Pause,
+Force off or tapping a pad stops it at once. It also works when palettes
+change "Manual only". If "Off on drop" is on and the cycle runs, the
+cycle replaces the raw bars for that drop. The bundled Techno Apocalypse
+set has it on: 50%, 1 bar, 1/8.
 
 Every change you make in the panel is applied to the filter straight away
 and marks the set as changed; press Save on the Set tab to keep it in the

@@ -628,6 +628,18 @@ extern "C" bool pd_set_parse(const char *json, struct pl_set *out, char *err, si
 	s.strength = r.real(col, "strength", s.strength, 0.0f, 1.0f);
 	s.contrast = r.real(col, "contrast", s.contrast, 0.5f, 2.0f);
 	s.preserve = r.real(col, "keep_brightness", s.preserve, 0.0f, 1.0f);
+	/* v1 amendments: optional, so older schema-2 files still load with the defaults */
+	s.input_black = r.real(col, "input_black", s.input_black, 0.0f, 0.5f);
+	s.input_white = r.real(col, "input_white", s.input_white, 0.5f, 1.0f);
+	const std::string bsrc = r.string(col, "brightness_source", "perceived");
+	if (bsrc == "perceived")
+		s.brightness_source = PL_BSRC_PERCEIVED;
+	else if (bsrc == "max")
+		s.brightness_source = PL_BSRC_MAX;
+	else if (bsrc == "average")
+		s.brightness_source = PL_BSRC_AVERAGE;
+	else
+		r.bad("unknown brightness_source '" + bsrc + "' (perceived, max or average)");
 
 	const Value *pc = r.object(&root, "palette_changes");
 	const std::string trig = r.string(pc, "trigger", "drop");
@@ -712,6 +724,11 @@ extern "C" char *pd_set_write(const struct pl_set *s)
 	put(col, "strength", V_real(s->strength));
 	put(col, "contrast", V_real(s->contrast));
 	put(col, "keep_brightness", V_real(s->preserve));
+	put(col, "input_black", V_real(s->input_black));
+	put(col, "input_white", V_real(s->input_white));
+	static const char *bsrcs[3] = {"perceived", "max", "average"};
+	put(col, "brightness_source",
+	    V_str(bsrcs[(s->brightness_source >= 0 && s->brightness_source < 3) ? s->brightness_source : 0]));
 	put(root, "colour", std::move(col));
 
 	Value pc = V_obj();

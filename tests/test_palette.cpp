@@ -250,3 +250,24 @@ TEST_CASE("#FF00A0 round-trips exactly through the obs int and hex helpers")
 	pl_colour_to_hex(back, out);
 	CHECK(strcmp(out, hex) == 0);
 }
+
+TEST_CASE("coverage: breathing only dips below coverage, and is off while silent")
+{
+	// coverage 1, breathing 0.5, lock on, silent feed: pure palette (amt 1)
+	CHECK(pl_lock_amount(1.0f, 0.5f, 0.0f, 1.0f, true) == doctest::Approx(1.0f));
+	// with audio and no bass, breathing dips to 1 - b
+	CHECK(pl_lock_amount(1.0f, 0.5f, 0.0f, 1.0f, false) == doctest::Approx(0.5f));
+	// on a kick (bass*1.2 >= 1) it is back at coverage, never above
+	CHECK(pl_lock_amount(0.8f, 0.5f, 1.0f, 1.0f, false) == doctest::Approx(0.8f));
+	CHECK(pl_lock_amount(0.8f, 1.0f, 2.0f, 1.0f, false) <= 0.8f + 1e-6f);
+	// lock mix scales it (random-off fade)
+	CHECK(pl_lock_amount(1.0f, 0.0f, 0.0f, 0.25f, false) == doctest::Approx(0.25f));
+	// v1 defaults: breathing 0, keep brightness 0, full input range, perceived
+	struct pl_set d;
+	pl_set_init(&d);
+	CHECK(d.breathing == doctest::Approx(0.0f));
+	CHECK(d.preserve == doctest::Approx(0.0f));
+	CHECK(d.input_black == doctest::Approx(0.0f));
+	CHECK(d.input_white == doctest::Approx(1.0f));
+	CHECK(d.brightness_source == PL_BSRC_PERCEIVED);
+}

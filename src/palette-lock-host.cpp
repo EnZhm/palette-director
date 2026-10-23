@@ -526,6 +526,7 @@ static void worker_main(pd_host *h)
 		rs.rotation = st.rotation_offset;
 		rs.mix = mix;
 		rs.bass = st.bass;
+		rs.silent = st.silent ? 1 : 0;
 		publish_render(h, rs);
 
 		/* 6. decision log (rate-limited LOG_INFO) */

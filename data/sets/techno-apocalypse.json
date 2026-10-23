@@ -87,7 +87,10 @@
   "colour": {
     "strength": 1.0,
     "contrast": 1.2,
-    "keep_brightness": 0.15
+    "keep_brightness": 0.15,
+    "input_black": 0.0,
+    "input_white": 1.0,
+    "brightness_source": "perceived"
   },
   "palette_changes": {
     "trigger": "phrases",

@@ -2,8 +2,8 @@
 """
 Palette Lock render check over obs-websocket. Run it on the Windows VJ machine, against the real OBS.
 
-STATUS: written against obsws-python 1.8.0 (its method signatures were checked).
-Not yet run against a live OBS 32.2.2 with the graphics-context fix installed.
+STATUS: run against the portable OBS 32.2.2 sandbox (obsws-python 1.8.0); checks G/H/I added
+for the v1 look controls (coverage, brightness source, input range).
 
 What it does:
   1. Builds a throwaway scene "PD-Test" that contains a mid-grey Color Source.
@@ -44,14 +44,32 @@ GREY_ABGR_PAL = 0xFF808080
 WHITE_ABGR = 0xFFFFFFFF
 
 
-def filter_settings(strength, mode=0, top=RED_ABGR):
-    # keys from src/palette-lock-filter.c (S_PALETTE / S_MODE / S_NCOLOURS / S_COLOUR)
-    return {
+BLUE_ABGR = 0xFFFF0000          # pure #0000FF (blue in bits 16..23)
+SILVER_ABGR = 0xFFC0C0C0        # #C0C0C0
+
+
+def filter_settings(strength, mode=0, top=RED_ABGR, **look):
+    # keys from src/palette-lock-filter.c (S_PALETTE / S_MODE / S_NCOLOURS / S_COLOUR).
+    # Every setting a check depends on is set explicitly (overlay=False replaces the
+    # whole settings object, so nothing leaks between checks):
+    #  - no audio source -> the Director runs on the fallback BPM, the feed is silent,
+    #    there are no random events, and the lock stays on (mix 1);
+    #  - lock behaviours that could take the lock off are disabled; manual palette changes.
+    s = {
         "n_palettes": 1, "live_palette": 0, "edit_palette": 0,
         "strength": float(strength), "contrast": 1.0, "preserve": 0.0, "crossfade_beats": 0.0,
+        "input_black": 0.0, "input_white": 1.0, "brightness_source": 0, "breathing": 0.0,
+        "audio_source": "", "dir_enabled": True, "trigger": 3, "random_off": False,
+        "off_on_breakdown": False, "off_on_drop": False, "rotation": False,
         "palette.0.name": "TestRed", "palette.0.mode": mode, "palette.0.n_colours": 2,
         "palette.0.colour.0": BLACK_ABGR, "palette.0.colour.1": top,
     }
+    s.update(look)
+    return s
+
+
+def near(p, rgb, tol=10):
+    return all(abs(p[i] - rgb[i]) <= tol for i in range(3))
 
 
 def centre_pixel(cl, name=SRC):
@@ -98,8 +116,6 @@ def main():
           lambda p: p[0] >= 40 and p[1] <= 25 and p[2] <= 25, "R clearly > 0, G and B near 0")
 
     # D: colour-space check. luma(#808080) = 0.502 -> gradient black->red gives #800000 in gamma space.
-    def near(p, rgb, tol=10):
-        return all(abs(p[i] - rgb[i]) <= tol for i in range(3))
 
     check("D colour space #808080 -> #800000 (gradient, strength 1)", filter_settings(1.0, 0),
           lambda p: near(p, (128, 0, 0)), "(128,0,0) +-10; darker means texels are being mapped linearised")
@@ -115,6 +131,29 @@ def main():
 
     # E: alpha must survive (an alpha-0 output would show as black on the canvas)
     check("E output alpha opaque", filter_settings(1.0, 0), lambda p: p[3] >= 250, "alpha 255")
+
+    # ---- v1 amendments: look controls ----
+    # G: coverage 1 with breathing 0.5. What this really exercises: with no audio source the
+    # feed is silent, and breathing is suspended while silent (pl_lock_amount), so the lock
+    # amount equals coverage x lock_mix = 1 and NO grey may leak through. (Under the pre-v1
+    # maths the same set-up gave amt = 1 - 0.5 = 0.5 -> about (128,64,64).) The breathing dip
+    # itself, which needs a live bass envelope, is covered by the unit test
+    # "coverage: breathing only dips below coverage" in tests/test_palette.cpp.
+    check("G coverage 1, breathing 0.5, silent, lock on -> pure palette", filter_settings(1.0, 0, breathing=0.5),
+          lambda p: near(p, (128, 0, 0)), "(128,0,0) +-10, G/B ~0 (no grey leak)")
+
+    # H: brightness source on a saturated blue (luma 0.0722)
+    cl.set_input_settings(SRC, {"color": BLUE_ABGR}, True)
+    check("H brightness from max, #0000FF -> top of black->red", filter_settings(1.0, 0, brightness_source=1),
+          lambda p: near(p, (255, 0, 0)), "(255,0,0) +-10")
+    check("H brightness from perceived, #0000FF -> dark red", filter_settings(1.0, 0, brightness_source=0),
+          lambda p: near(p, (18, 0, 0)), "(~18,0,0) +-10 (luma 0.0722)")
+
+    # I: input range. #C0C0C0 = 0.753 > input_white 0.75 -> l = 1 -> palette top
+    cl.set_input_settings(SRC, {"color": SILVER_ABGR}, True)
+    check("I input_white 0.75, #C0C0C0 -> palette top", filter_settings(1.0, 0, input_white=0.75),
+          lambda p: near(p, (255, 0, 0)), "(255,0,0) +-10")
+    cl.set_input_settings(SRC, {"color": GREY_ABGR}, True)
 
     if not a.keep:
         cl.remove_scene(SCENE)

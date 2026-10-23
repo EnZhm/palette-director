@@ -27,6 +27,9 @@ void pl_set_init(struct pl_set *s)
 	s->strength = 1.0f;
 	s->contrast = 1.1f;
 	s->preserve = 0.0f;
+	s->input_black = 0.0f;
+	s->input_white = 1.0f;
+	s->brightness_source = PL_BSRC_PERCEIVED;
 	s->crossfade_beats = 2.0f;
 
 	/* mock v2 DEF_DIR */
@@ -50,6 +53,21 @@ void pl_set_init(struct pl_set *s)
 	s->breathing = 0.0f;
 	s->rotation = false;
 	s->seed = 7;
+}
+
+static float clamp01(float v)
+{
+	return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
+
+float pl_lock_amount(float coverage, float breathing, float bass, float lock_mix, bool silent)
+{
+	float b = silent ? 0.0f : clamp01(breathing);
+	float bb = bass * 1.2f;
+	if (bb > 1.0f)
+		bb = 1.0f;
+	const float breath = 1.0f - b + b * bb;
+	return clamp01(coverage) * breath * clamp01(lock_mix);
 }
 
 int pl_breakdown_index(const struct pl_set *s)

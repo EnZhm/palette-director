@@ -34,6 +34,11 @@ uniform float pfade;
 uniform float amt;
 uniform float contrast;
 uniform float preserve;
+/* v1 amendments: scalars appended after the original uniforms (D3D11 cbuffer packing,
+ * tests/test_cbuffer_layout.cpp) */
+uniform float in_black;
+uniform float in_white;
+uniform int bsrc;
 
 sampler_state textureSampler {
 	Filter   = Linear;
@@ -77,6 +82,16 @@ float luma(float3 c)
 	return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
+/* "Brightness from": 0 perceived (Rec.709), 1 max(r,g,b), 2 average */
+float brightness(float3 c)
+{
+	if (bsrc == 1)
+		return max(c.r, max(c.g, c.b));
+	if (bsrc == 2)
+		return (c.r + c.g + c.b) / 3.0;
+	return luma(c);
+}
+
 float3 lumaMatch(float3 c, float l)
 {
 	return clamp(c * (l / max(luma(c), 0.002)), 0.0, 1.0);
@@ -102,7 +117,9 @@ float3 mapB(float l)
 
 float3 lockColour(float3 src)
 {
-	float l = clamp((luma(src) - 0.5) * contrast + 0.5, 0.0, 1.0);
+	/* input range first (black..white -> 0..1), then contrast */
+	float l = saturate((brightness(src) - in_black) / max(in_white - in_black, 0.01));
+	l = clamp((l - 0.5) * contrast + 0.5, 0.0, 1.0);
 	float3 m = lerp(mapA(l), mapB(l), pfade);
 	return lerp(m, lumaMatch(m, l), preserve);
 }

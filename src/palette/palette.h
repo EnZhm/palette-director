@@ -19,7 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>/
 /*
 Palette runtime model for the Palette Lock filter (P2).
 
-This is the filter-side data model: one performance set holding 1..8 named
+This is the filter-side data model: one performance set holding 1..16 named
 palettes, each with a recolour mode and 2..8 colours (dark -> bright).  It is
 deliberately free of any libobs/Qt dependency so the set lifecycle can be unit
 tested and later bridged to the pure-C++ Director (P4) and set files (P6).
@@ -72,6 +72,13 @@ enum pl_trigger {
 	PL_TRIGGER_MANUAL = 3,  /* manual only */
 };
 
+/* where the gradient-map position comes from (v1 amendments) */
+enum pl_brightness_source {
+	PL_BSRC_PERCEIVED = 0, /* Rec.709 luma (default) */
+	PL_BSRC_MAX = 1,       /* max(r, g, b): saturated colours count as bright */
+	PL_BSRC_AVERAGE = 2,   /* (r + g + b) / 3 */
+};
+
 enum pl_order {
 	PL_ORDER_SEQUENCE = 0, /* in list order */
 	PL_ORDER_SHUFFLE = 1,  /* shuffle (no repeats) */
@@ -82,9 +89,12 @@ struct pl_set {
 	char synesthesia_playlist[PL_NAME_MAX];
 	struct pl_palette palettes[PL_MAX_PALETTES];
 	int n_palettes;
-	float strength;        /* 0..1 */
+	float strength;        /* 0..1, shown as "Coverage" 0..100% */
 	float contrast;        /* 0.5..2 */
 	float preserve;        /* 0..1 (keep brightness) */
+	float input_black;     /* 0..0.5: source brightness mapped to the palette's first colour */
+	float input_white;     /* 0.5..1: source brightness mapped to the palette's last colour */
+	int brightness_source; /* enum pl_brightness_source */
 	float crossfade_beats; /* 0 = cut, else beats */
 
 	/* Palette changes (P4; defaults = mock DEF_DIR) */
@@ -111,6 +121,12 @@ struct pl_set {
 	bool rotation;
 	unsigned seed; /* 0..99999 */
 };
+
+/* Shader blend amount (v1 amendments): coverage x breathing x lock_mix, mock fade model.
+ * Breathing (1 - b + b*min(1, bass*1.2)) only ever dips below coverage, and is not applied
+ * while the feed is silent (there is nothing to breathe with): coverage 1 + lock on then
+ * means pure palette output. */
+float pl_lock_amount(float coverage, float breathing, float bass, float lock_mix, bool silent);
 
 /* index of the breakdown palette (resolved by name), -1 = none */
 int pl_breakdown_index(const struct pl_set *s);

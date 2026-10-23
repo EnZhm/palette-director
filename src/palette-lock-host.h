@@ -67,6 +67,7 @@ struct pd_render_state {
 	int rotation;
 	float mix;  /* faded lock mix 0..1 */
 	float bass; /* 0..1 bass envelope (breathing) */
+	int silent; /* feed silent / no audio source: breathing suspended */
 };
 
 struct pd_host;

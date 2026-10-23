@@ -46,6 +46,9 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	CHECK(s.strength == doctest::Approx(1.0f));
 	CHECK(s.contrast == doctest::Approx(1.2f));
 	CHECK(s.preserve == doctest::Approx(0.15f));
+	CHECK(s.input_black == doctest::Approx(0.0f));
+	CHECK(s.input_white == doctest::Approx(1.0f));
+	CHECK(s.brightness_source == PL_BSRC_PERCEIVED);
 	CHECK(s.trigger == PL_TRIGGER_PHRASES);
 	CHECK(s.every_phrases == 8);
 	CHECK(s.order == PL_ORDER_SHUFFLE);
@@ -148,6 +151,44 @@ TEST_CASE("invalid set files are rejected with a reason")
 				 "[\"#000000\", \"#FFFFFF\"]}], \"palette_changes\": {\"breakdown_palette\": \"zz\"}}",
 				 &s, err, sizeof(err)));
 	CHECK_FALSE(pd_set_parse("not json", &s, err, sizeof(err)));
+}
+
+TEST_CASE("v1 look keys are optional on load and round-trip when present")
+{
+	/* an older schema-2 file without the v1 keys loads with the defaults */
+	const char *old_file = "{\"schema\": 2, \"name\": \"Old\", \"palettes\": [{\"name\": \"a\", \"colours\": "
+			       "[\"#000000\", \"#FF0000\"]}], \"colour\": {\"strength\": 0.5}}";
+	struct pl_set s;
+	char err[256] = {0};
+	REQUIRE_MESSAGE(pd_set_parse(old_file, &s, err, sizeof(err)), err);
+	CHECK(s.strength == doctest::Approx(0.5f));
+	CHECK(s.input_black == doctest::Approx(0.0f));
+	CHECK(s.input_white == doctest::Approx(1.0f));
+	CHECK(s.brightness_source == PL_BSRC_PERCEIVED);
+
+	s.input_black = 0.125f;
+	s.input_white = 0.75f;
+	s.brightness_source = PL_BSRC_MAX;
+	char *out = pd_set_write(&s);
+	REQUIRE(out != nullptr);
+	CHECK(std::strstr(out, "\"input_black\": 0.125") != nullptr);
+	CHECK(std::strstr(out, "\"input_white\": 0.75") != nullptr);
+	CHECK(std::strstr(out, "\"brightness_source\": \"max\"") != nullptr);
+	struct pl_set s2;
+	REQUIRE(pd_set_parse(out, &s2, err, sizeof(err)));
+	CHECK(s2.input_black == doctest::Approx(0.125f));
+	CHECK(s2.input_white == doctest::Approx(0.75f));
+	CHECK(s2.brightness_source == PL_BSRC_MAX);
+	pd_set_free(out);
+
+	/* out-of-range / unknown values are rejected */
+	CHECK_FALSE(pd_set_parse("{\"schema\": 2, \"name\": \"x\", \"palettes\": [{\"name\": \"a\", \"colours\": "
+				 "[\"#000000\", \"#FFFFFF\"]}], \"colour\": {\"input_white\": 0.2}}",
+				 &s, err, sizeof(err)));
+	CHECK_FALSE(pd_set_parse("{\"schema\": 2, \"name\": \"x\", \"palettes\": [{\"name\": \"a\", \"colours\": "
+				 "[\"#000000\", \"#FFFFFF\"]}], \"colour\": {\"brightness_source\": \"hue\"}}",
+				 &s, err, sizeof(err)));
+	CHECK(std::strstr(err, "brightness_source") != nullptr);
 }
 
 TEST_CASE("set file names follow the mock's slug rule")

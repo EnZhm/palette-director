@@ -53,6 +53,9 @@ struct palette_lock_filter {
 	gs_eparam_t *p_amt;
 	gs_eparam_t *p_contrast;
 	gs_eparam_t *p_preserve;
+	gs_eparam_t *p_in_black;
+	gs_eparam_t *p_in_white;
+	gs_eparam_t *p_bsrc;
 
 	struct pl_set set;
 	unsigned long long gen;   /* palette-layout generation pushed to the host */
@@ -84,6 +87,9 @@ static void write_set(obs_data_t *s, const struct pl_set *set, bool def)
 	SET_DOUBLE(s, "strength", set->strength);
 	SET_DOUBLE(s, "contrast", set->contrast);
 	SET_DOUBLE(s, "preserve", set->preserve);
+	SET_DOUBLE(s, "input_black", set->input_black);
+	SET_DOUBLE(s, "input_white", set->input_white);
+	SET_INT(s, "brightness_source", set->brightness_source);
 	SET_DOUBLE(s, "crossfade_beats", set->crossfade_beats);
 
 	SET_INT(s, "trigger", set->trigger);
@@ -159,6 +165,9 @@ static void set_from_settings(obs_data_t *s, struct pl_set *set)
 	set->strength = clampf(obs_data_get_double(s, "strength"), 0.0f, 1.0f);
 	set->contrast = clampf(obs_data_get_double(s, "contrast"), 0.5f, 2.0f);
 	set->preserve = clampf(obs_data_get_double(s, "preserve"), 0.0f, 1.0f);
+	set->input_black = clampf(obs_data_get_double(s, "input_black"), 0.0f, 0.5f);
+	set->input_white = clampf(obs_data_get_double(s, "input_white"), 0.5f, 1.0f);
+	set->brightness_source = clampi(obs_data_get_int(s, "brightness_source"), PL_BSRC_PERCEIVED, PL_BSRC_AVERAGE);
 	set->crossfade_beats = clampf(obs_data_get_double(s, "crossfade_beats"), 0.0f, 16.0f);
 
 	set->trigger = clampi(obs_data_get_int(s, "trigger"), PL_TRIGGER_DROP, PL_TRIGGER_MANUAL);
@@ -482,6 +491,9 @@ static void *palette_lock_create(obs_data_t *settings, obs_source_t *source)
 		f->p_amt = gs_effect_get_param_by_name(f->effect, "amt");
 		f->p_contrast = gs_effect_get_param_by_name(f->effect, "contrast");
 		f->p_preserve = gs_effect_get_param_by_name(f->effect, "preserve");
+		f->p_in_black = gs_effect_get_param_by_name(f->effect, "in_black");
+		f->p_in_white = gs_effect_get_param_by_name(f->effect, "in_white");
+		f->p_bsrc = gs_effect_get_param_by_name(f->effect, "bsrc");
 		blog(LOG_INFO, "[palette-lock] filter created: '%s', %d palette(s), live %d, audio '%s'", f->set.name,
 		     f->set.n_palettes, live, obs_data_get_string(settings, "audio_source"));
 	}
@@ -546,7 +558,7 @@ static void palette_lock_render(void *data, gs_effect_t *unused)
 	}
 
 	/* Director state from the lock-free triple buffer (no locks on the render thread) */
-	struct pd_render_state rs = {0, 0, -1, 1.0f, 0, 1.0f, 0.0f};
+	struct pd_render_state rs = {0, 0, -1, 1.0f, 0, 1.0f, 0.0f, 1};
 	if (!pd_host_render_state(f->host, &rs))
 		rs.live = f->live_setting;
 	const int n = f->set.n_palettes;
@@ -569,12 +581,8 @@ static void palette_lock_render(void *data, gs_effect_t *unused)
 	upload_palette(palA, &pa);
 	upload_palette(palB, &pb);
 
-	/* amt = strength x breathing x lock_mix (mock: 1 - b + b*min(1, bass*1.2)) */
-	float bass = rs.bass * 1.2f;
-	if (bass > 1.0f)
-		bass = 1.0f;
-	const float breath = 1.0f - f->set.breathing + f->set.breathing * bass;
-	const float amt = f->set.strength * breath * rs.mix;
+	/* amt = coverage x breathing x lock_mix (mock: 1 - b + b*min(1, bass*1.2)) */
+	const float amt = pl_lock_amount(f->set.strength, f->set.breathing, rs.bass, rs.mix, rs.silent != 0);
 
 	gs_effect_set_val(f->p_palA, palA, sizeof(palA));
 	gs_effect_set_val(f->p_palB, palB, sizeof(palB));
@@ -586,6 +594,9 @@ static void palette_lock_render(void *data, gs_effect_t *unused)
 	gs_effect_set_float(f->p_amt, amt);
 	gs_effect_set_float(f->p_contrast, f->set.contrast);
 	gs_effect_set_float(f->p_preserve, f->set.preserve);
+	gs_effect_set_float(f->p_in_black, f->set.input_black);
+	gs_effect_set_float(f->p_in_white, f->set.input_white);
+	gs_effect_set_int(f->p_bsrc, f->set.brightness_source);
 
 	obs_source_process_filter_end(f->context, f->effect, 0, 0);
 }
@@ -978,6 +989,27 @@ static bool enum_audio_list(void *param, obs_source_t *src)
 	return true;
 }
 
+static void add_look_properties(obs_properties_t *g)
+{
+	obs_property_t *p;
+	p = obs_properties_add_float_slider(g, "strength", obs_module_text("Coverage"), 0.0, 1.0, 0.01);
+	obs_property_set_long_description(p, obs_module_text("Coverage.Help"));
+	p = obs_properties_add_float_slider(g, "input_black", obs_module_text("InputBlack"), 0.0, 0.5, 0.01);
+	obs_property_set_long_description(p, obs_module_text("InputBlack.Help"));
+	p = obs_properties_add_float_slider(g, "input_white", obs_module_text("InputWhite"), 0.5, 1.0, 0.01);
+	obs_property_set_long_description(p, obs_module_text("InputWhite.Help"));
+	p = obs_properties_add_list(g, "brightness_source", obs_module_text("BrightnessFrom"), OBS_COMBO_TYPE_LIST,
+				    OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(p, obs_module_text("BrightnessFrom.Perceived"), PL_BSRC_PERCEIVED);
+	obs_property_list_add_int(p, obs_module_text("BrightnessFrom.Max"), PL_BSRC_MAX);
+	obs_property_list_add_int(p, obs_module_text("BrightnessFrom.Average"), PL_BSRC_AVERAGE);
+	obs_property_set_long_description(p, obs_module_text("BrightnessFrom.Help"));
+	p = obs_properties_add_float_slider(g, "contrast", obs_module_text("Contrast"), 0.5, 2.0, 0.01);
+	obs_property_set_long_description(p, obs_module_text("Contrast.Help"));
+	p = obs_properties_add_float_slider(g, "preserve", obs_module_text("KeepBrightness"), 0.0, 1.0, 0.01);
+	obs_property_set_long_description(p, obs_module_text("KeepBrightness.Help"));
+}
+
 static obs_properties_t *palette_lock_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
@@ -1090,12 +1122,10 @@ static obs_properties_t *palette_lock_properties(void *data)
 
 	obs_properties_add_group(props, "palettes", obs_module_text("Palettes"), OBS_GROUP_NORMAL, gpal);
 
-	/* ---- Colour ---- */
+	/* ---- Look (v1 amendments) ---- */
 	obs_properties_t *gcol = obs_properties_create();
-	obs_properties_add_float_slider(gcol, "strength", "Strength", 0.0, 1.0, 0.01);
-	obs_properties_add_float_slider(gcol, "contrast", "Contrast in", 0.5, 2.0, 0.01);
-	obs_properties_add_float_slider(gcol, "preserve", "Keep brightness", 0.0, 1.0, 0.01);
-	obs_properties_add_group(props, "colour", obs_module_text("Colour"), OBS_GROUP_NORMAL, gcol);
+	add_look_properties(gcol);
+	obs_properties_add_group(props, "colour", obs_module_text("Look"), OBS_GROUP_NORMAL, gcol);
 
 	/* ---- Palette changes ---- */
 	obs_properties_t *gchg = obs_properties_create();

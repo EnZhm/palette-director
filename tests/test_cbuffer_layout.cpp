@@ -282,4 +282,31 @@ TEST_CASE("palette-lock.effect cbuffer layout matches OBS BuildConstantBuffer")
 		CHECK(obs[i].offset == hlsl[i].offset);
 		CHECK(obs[i].size == hlsl[i].size);
 	}
+
+	/* v1 amendments: the look uniforms exist, are scalars, and come after the original
+	 * uniforms (appending scalars keeps every earlier offset unchanged). */
+	auto index_of = [&](const char *n) {
+		for (size_t i = 0; i < pixel.size(); i++)
+			if (pixel[i].name == n)
+				return static_cast<int>(i);
+		return -1;
+	};
+	const int preserve = index_of("preserve");
+	REQUIRE(preserve >= 0);
+	for (const char *n : {"in_black", "in_white", "bsrc"}) {
+		INFO("uniform: " << n);
+		const int i = index_of(n);
+		REQUIRE(i >= 0);
+		CHECK(pixel[static_cast<size_t>(i)].type == VarType::Scalar);
+		CHECK(pixel[static_cast<size_t>(i)].array_count == 0);
+		CHECK(i > preserve);
+	}
+	/* palA/palB stay float4[8] (the original D3D11 fix) */
+	for (const char *n : {"palA", "palB"}) {
+		INFO("uniform: " << n);
+		const int i = index_of(n);
+		REQUIRE(i >= 0);
+		CHECK(pixel[static_cast<size_t>(i)].type == VarType::Vec4);
+		CHECK(pixel[static_cast<size_t>(i)].array_count == 8);
+	}
 }

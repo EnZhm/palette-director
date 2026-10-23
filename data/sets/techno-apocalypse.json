@@ -15,72 +15,115 @@
       ]
     },
     {
+      "name": "Outrun",
+      "mode": "gradient_map",
+      "colours": [
+        "#05010D",
+        "#2A0A4A",
+        "#9D00FF",
+        "#FF00A0",
+        "#FF5A00",
+        "#FFB000"
+      ]
+    },
+    {
       "name": "Toxic Rain",
       "mode": "gradient_map",
       "colours": [
-        "#020803",
-        "#0B3D1A",
+        "#020703",
+        "#003A44",
+        "#00F0FF",
         "#39FF14",
-        "#D4FF00",
-        "#F7FFE0"
+        "#C6FF00"
       ]
     },
     {
       "name": "Fallout Amber",
       "mode": "gradient_map",
       "colours": [
-        "#080404",
-        "#4A0F00",
-        "#FF4D00",
+        "#0A0303",
+        "#4A0010",
+        "#FF1744",
+        "#FF5A00",
         "#FFB000",
         "#FFF1C9"
-      ]
-    },
-    {
-      "name": "Synth Violet",
-      "mode": "gradient_map",
-      "colours": [
-        "#07020F",
-        "#3B0A6B",
-        "#9D00FF",
-        "#FF2ED1",
-        "#FFD6F6"
       ]
     },
     {
       "name": "Ice Circuit",
       "mode": "gradient_map",
       "colours": [
-        "#01040A",
-        "#002B5C",
-        "#0077FF",
-        "#00FFE1",
-        "#EFFFFF"
+        "#010609",
+        "#0A1F66",
+        "#2F6BFF",
+        "#00F0FF",
+        "#E8FDFF"
+      ]
+    },
+    {
+      "name": "Hologram",
+      "mode": "gradient_map",
+      "colours": [
+        "#05010D",
+        "#0A1F66",
+        "#2F6BFF",
+        "#FF4FD8",
+        "#FFD6F6"
+      ]
+    },
+    {
+      "name": "Acid House",
+      "mode": "gradient_map",
+      "colours": [
+        "#05010D",
+        "#4A0030",
+        "#FF00A0",
+        "#FFB000",
+        "#C6FF00"
+      ]
+    },
+    {
+      "name": "Ultraviolet Riot",
+      "mode": "gradient_map",
+      "colours": [
+        "#05010D",
+        "#24005C",
+        "#9D00FF",
+        "#2F6BFF",
+        "#B48CFF"
       ]
     },
     {
       "name": "Red Alert",
       "mode": "gradient_map",
       "colours": [
-        "#0A0000",
-        "#3D0008",
-        "#FF0033",
-        "#FF5E7A",
-        "#FFE3E8"
+        "#0A0303",
+        "#4A0010",
+        "#FF1744",
+        "#2F6BFF",
+        "#8FB0FF"
       ]
     },
     {
-      "name": "Spectrum Fallout",
+      "name": "Sodium Noir",
       "mode": "gradient_map",
       "colours": [
-        "#05000A",
-        "#FF0033",
-        "#9D00FF",
-        "#0077FF",
-        "#00F0FF",
+        "#010609",
+        "#002830",
+        "#C4002E",
+        "#FF5A00",
+        "#FFB000"
+      ]
+    },
+    {
+      "name": "Chernobyl Glow",
+      "mode": "gradient_map",
+      "colours": [
+        "#020703",
+        "#0B3D1A",
         "#39FF14",
-        "#D4FF00",
-        "#FF4D00"
+        "#C6FF00",
+        "#F7FFE0"
       ]
     },
     {
@@ -92,73 +135,41 @@
       ]
     },
     {
-      "name": "Acid Rain",
-      "mode": "duotone",
-      "colours": [
-        "#020803",
-        "#39FF14"
-      ]
-    },
-    {
-      "name": "Thermal",
-      "mode": "duotone",
-      "colours": [
-        "#0A0000",
-        "#FF4D00"
-      ]
-    },
-    {
       "name": "Cold Steel",
       "mode": "duotone",
       "colours": [
-        "#01040A",
+        "#010609",
         "#00F0FF"
-      ]
-    },
-    {
-      "name": "Nuclear Dawn",
-      "mode": "duotone",
-      "colours": [
-        "#080404",
-        "#FFB000"
       ]
     },
     {
       "name": "Bruise",
       "mode": "duotone",
       "colours": [
-        "#07020F",
+        "#05010D",
         "#9D00FF"
       ]
     },
     {
-      "name": "Sodium Streetlight",
-      "mode": "gradient_map",
+      "name": "Infrared",
+      "mode": "duotone",
       "colours": [
-        "#050302",
-        "#3D1A00",
-        "#B34700",
-        "#FF8C00"
+        "#0A0303",
+        "#FF1744"
       ]
     },
     {
-      "name": "Chernobyl Glow",
+      "name": "Spectrum Fallout",
       "mode": "gradient_map",
       "colours": [
-        "#010502",
-        "#08331A",
-        "#1FA34A",
-        "#7DFF3A"
-      ]
-    },
-    {
-      "name": "Ultraviolet Riot",
-      "mode": "gradient_map",
-      "colours": [
-        "#030010",
-        "#24005C",
-        "#6A00FF",
-        "#C800FF"
+        "#05010D",
+        "#9D00FF",
+        "#FF00A0",
+        "#FF1744",
+        "#FF5A00",
+        "#FFB000",
+        "#39FF14",
+        "#00F0FF"
       ]
     }
   ],

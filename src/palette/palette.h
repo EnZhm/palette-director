@@ -121,6 +121,10 @@ struct pl_set {
 	float breathing;
 	bool rotation;
 	unsigned seed; /* 0..99999 */
+
+	/* v1.0.1 audio sensitivity (set-file keys optional; defaults = v1.0.0 behaviour) */
+	float input_gain_db;    /* -12..+24 dB, applied before analysis */
+	float kick_sensitivity; /* 0..1 (0-100%), default 0.6 = v1.0.0's 0.4 x reference */
 };
 
 /* Shader blend amount (v1 amendments): coverage x breathing x lock_mix, mock fade model.

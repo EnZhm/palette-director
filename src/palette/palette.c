@@ -53,6 +53,8 @@ void pl_set_init(struct pl_set *s)
 	s->breathing = 0.0f;
 	s->rotation = false;
 	s->seed = 7;
+	s->input_gain_db = 0.0f;
+	s->kick_sensitivity = 0.6f;
 }
 
 static float clamp01(float v)

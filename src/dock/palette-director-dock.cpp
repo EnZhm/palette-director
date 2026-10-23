@@ -266,6 +266,66 @@ protected:
 	}
 };
 
+/* ---- v1.0.1 audio meter: input level (dBFS after gain, CLIP > -1 dBFS), bass bar with the kick
+ * threshold marked, kick light. Fed from the DockView snapshot (copied under the host's view mutex). */
+class AudioMeter : public QWidget {
+public:
+	explicit AudioMeter(QWidget *parent) : QWidget(parent)
+	{
+		setMinimumHeight(34);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	}
+	float db = -120.0f, bass = 0.0f, thr = 0.4f;
+	bool clip = false, silent = true;
+	int kick_flash = 0; // frames left to light the kick lamp
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter p(this);
+		p.setRenderHint(QPainter::Antialiasing);
+		const QPalette &pl = palette();
+		const double W = width(), lamp = 26.0, lbl = 46.0;
+		const double bw = std::max(40.0, W - lamp - lbl - 10.0);
+		QFont f = font();
+		f.setPointSizeF(std::max(6.0, f.pointSizeF() * 0.8));
+		f.setBold(true);
+		p.setFont(f);
+		p.setPen(pl.color(QPalette::PlaceholderText));
+		p.drawText(QRectF(0, 0, lbl, 15), Qt::AlignLeft | Qt::AlignVCenter, "LEVEL");
+		p.drawText(QRectF(0, 18, lbl, 15), Qt::AlignLeft | Qt::AlignVCenter, "BASS");
+		/* level: -60..0 dBFS */
+		const QRectF lr(lbl, 2, bw, 11);
+		p.fillRect(lr, pl.color(QPalette::Base));
+		const double lv = std::clamp((static_cast<double>(db) + 60.0) / 60.0, 0.0, 1.0);
+		const QColor lc = clip ? QColor(255, 60, 90)
+				       : (db > -6.0f ? QColor(255, 190, 40) : QColor(60, 200, 110));
+		p.fillRect(QRectF(lr.left(), lr.top(), lr.width() * lv, lr.height()), lc);
+		for (int t = -48; t < 0; t += 12) {
+			const double x = lr.left() + lr.width() * (t + 60.0) / 60.0;
+			p.fillRect(QRectF(x, lr.top(), 1, lr.height()), pl.color(QPalette::Mid));
+		}
+		p.setPen(pl.color(QPalette::Text));
+		p.drawText(lr.adjusted(4, -1, -4, 1), Qt::AlignRight | Qt::AlignVCenter,
+			   clip ? QString("CLIP %1 dBFS").arg(db, 0, 'f', 1)
+				: (db <= -119.0f ? QString("no signal") : QString("%1 dBFS").arg(db, 0, 'f', 1)));
+		/* bass bar with the kick threshold */
+		const QRectF br(lbl, 19, bw, 11);
+		p.fillRect(br, pl.color(QPalette::Base));
+		p.fillRect(QRectF(br.left(), br.top(), br.width() * std::clamp(bass, 0.0f, 1.0f), br.height()),
+			   pl.color(QPalette::Highlight));
+		const double tx = br.left() + br.width() * std::clamp(thr, 0.0f, 1.0f);
+		p.fillRect(QRectF(tx - 1, br.top() - 2, 2, br.height() + 4), QColor(255, 60, 90));
+		/* kick light */
+		const QRectF kr(W - lamp + 2, 4, lamp - 6, lamp - 6);
+		p.setPen(QPen(pl.color(QPalette::Mid), 1));
+		p.setBrush(kick_flash > 0 ? QColor(255, 60, 90) : pl.color(QPalette::Base));
+		p.drawEllipse(kr);
+		p.setPen(pl.color(QPalette::PlaceholderText));
+		p.drawText(QRectF(W - lamp - 4, 22, lamp + 4, 12), Qt::AlignCenter, "KICK");
+	}
+};
+
 /* ---- 64-beat timeline (mock drawTimeline) ---- */
 class TimelineWidget : public QWidget {
 public:
@@ -393,7 +453,7 @@ struct ValueSlider {
 		if (percent)
 			v->setText(QString("%1%").arg(s->value()));
 		else
-			v->setText(QString::number(s->value() / scale, 'f', 2));
+			v->setText(QString::number(s->value() / scale, 'f', scale <= 2.0 ? 1 : 2));
 	}
 };
 
@@ -510,6 +570,9 @@ protected:
 		sAudio = new QLabel(live_area);
 		sAudio->setForegroundRole(QPalette::PlaceholderText);
 		lv->addWidget(sAudio);
+		meter = new AudioMeter(live_area);
+		meter->setToolTip(T("Dock.MeterHelp"));
+		lv->addWidget(meter);
 
 		/* pads */
 		auto *ph = new QLabel(T("Dock.PalettesTap"), live_area);
@@ -863,9 +926,11 @@ protected:
 	}
 
 	ValueSlider make_slider(QFormLayout *form, QWidget *w, const char *label, const char *help, int lo, int hi,
-				bool percent, std::function<void(struct pl_set &, double)> set, const char *log_name)
+				bool percent, std::function<void(struct pl_set &, double)> set, const char *log_name,
+				double scale = 100.0)
 	{
 		ValueSlider vs;
+		vs.scale = scale;
 		vs.s = new QSlider(Qt::Horizontal, w);
 		vs.s->setRange(lo, hi);
 		vs.v = new QLabel(w);
@@ -1071,6 +1136,15 @@ protected:
 			ns.lock_fade_beats = static_cast<float>(b);
 			commit(ns, -1, QString("lock fade -> %1 beats").arg(b));
 		});
+		/* v1.0.1 audio sensitivity */
+		drGain = make_slider(
+			form, w, "InputGain", "InputGain.Help", -24, 48, false,
+			[](struct pl_set &s, double v) { s.input_gain_db = static_cast<float>(v); }, "input gain dB",
+			2.0);
+		drSens = make_slider(
+			form, w, "KickSensitivity", "KickSensitivity.Help", 0, 100, true,
+			[](struct pl_set &s, double v) { s.kick_sensitivity = static_cast<float>(v); },
+			"kick sensitivity");
 
 		auto *hdr = new QLabel(T("LockBehaviours"), w);
 		QFont hf = hdr->font();
@@ -1530,6 +1604,8 @@ private:
 		set_spin(drDropBars, s.drop_bars);
 		set_row_visible(drDropBars, s.off_on_drop);
 		set_slider(drBreath, s.breathing);
+		set_slider(drGain, s.input_gain_db);
+		set_slider(drSens, s.kick_sensitivity);
 		set_check(drRotation, s.rotation);
 		set_spin(drSeed, static_cast<int>(s.seed));
 		refresh_audio_list();
@@ -1850,6 +1926,19 @@ private:
 						  .arg(T("AudioSource"), QString::fromUtf8(view.audio_name.c_str()),
 						       view.audio_attached ? QString() : QString(" (not found)"), kDot)
 						  .arg(st.cooldown_phrases_left));
+		/* v1.0.1 audio meter */
+		meter->db = st.input_db;
+		meter->clip = st.clip;
+		meter->bass = st.bass_level;
+		meter->thr = st.kick_threshold;
+		meter->silent = st.silent;
+		if (st.kicks != kicks_seen) {
+			kicks_seen = st.kicks;
+			meter->kick_flash = 4; // ~130 ms at 30 Hz
+		} else if (meter->kick_flash > 0) {
+			meter->kick_flash--;
+		}
+		meter->update();
 		bForceOn->setChecked(st.forced_on);
 		bForceOn->setText(st.forced_on ? T("Dock.ForceOnActive") : T("Dock.ForceOn"));
 		bPause->setChecked(st.paused);
@@ -1966,7 +2055,9 @@ private:
 	QSpinBox *drBpm = nullptr, *drBarsMin = nullptr, *drBarsMax = nullptr, *drCool = nullptr, *drDropBars = nullptr,
 		 *drSeed = nullptr;
 	QDoubleSpinBox *drFade = nullptr;
-	ValueSlider drRandChance, drBreath;
+	ValueSlider drRandChance, drBreath, drGain, drSens;
+	AudioMeter *meter = nullptr;
+	uint32_t kicks_seen = 0;
 	/* log tab */
 	QPlainTextEdit *logText = nullptr;
 	QStringList lines;

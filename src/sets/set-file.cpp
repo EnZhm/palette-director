@@ -688,6 +688,9 @@ extern "C" bool pd_set_parse(const char *json, struct pl_set *out, char *err, si
 	s.breathing = r.real(dir, "breathing", s.breathing, 0.0f, 1.0f);
 	s.rotation = r.boolean(dir, "rotation", s.rotation);
 	s.seed = static_cast<unsigned>(r.integer(dir, "seed", static_cast<int>(s.seed), 0, 99999));
+	/* v1.0.1: optional, so v1.0.0 files load with today's behaviour */
+	s.input_gain_db = r.real(dir, "input_gain_db", s.input_gain_db, -12.0f, 24.0f);
+	s.kick_sensitivity = r.real(dir, "kick_sensitivity", s.kick_sensitivity, 0.0f, 1.0f);
 
 	if (!r.ok())
 		return set_err(r.err);
@@ -760,6 +763,8 @@ extern "C" char *pd_set_write(const struct pl_set *s)
 	put(dir, "breathing", V_real(s->breathing));
 	put(dir, "rotation", V_bool(s->rotation));
 	put(dir, "seed", V_int(static_cast<long long>(s->seed)));
+	put(dir, "input_gain_db", V_real(s->input_gain_db, true));
+	put(dir, "kick_sensitivity", V_real(s->kick_sensitivity));
 	put(root, "director", std::move(dir));
 
 	std::string o;

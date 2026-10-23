@@ -118,3 +118,33 @@ and a Force on pressed while panicked stayed on even after Resume.
   holding the lock.
 - A drop that happens while panicked does not change the palette (the director is paused); after the
   release the held palette stays until the next automatic change.
+
+### 10. Audio sensitivity: adaptive level reference, input gain, kick sensitivity, meter
+
+Ian: "the audio needs to be more sensitive or have a control to adjust". Root cause: the kick test
+compared each beat's bass peak with an all-time maximum that never decayed, so after one loud moment
+(a +5.5 dBFS synthetic track before switching to Desktop Audio at about -10 dBFS) normal kicks never
+cleared the bar and the Director sat in BREAKDOWN with no drop.
+
+- **Adaptive reference.** The reference has an instant attack and a 10 s release. It never falls below
+  10% of a 60 s follower of itself (a long no-bass breakdown cannot drag it down to the pad's residue)
+  nor below an absolute floor of 1e-7 bass energy (about -70 dB), so silence and hiss never count as
+  kicks. A kick must also rise 25% above the beat's own minimum (steady drones do not count). The
+  reference resets when the audio source changes. 10 s was picked with `tests/test_audio_level.cpp`:
+  6 s let kicks 8 dB softer count as kicks within 4 bars (too eager in a breakdown); 12 s took 17 bars
+  to recover from a section 15 dB louder; 10 s recovers in about 15 bars and keeps 8 dB-softer
+  material out of the kick count at the default sensitivity.
+- **Input gain** (`director.input_gain_db`, -12..+24 dB, default 0): applied to the mono downmix before
+  analysis, so the silence detector and the meter see the gained signal. Because the kick test is now
+  relative to the adaptive reference, gain does not change section detection on a healthy feed; it
+  matters at the silence floor (a very quiet line feed is treated as silence until it is boosted) and
+  for the meter.
+- **Kick sensitivity** (`director.kick_sensitivity`, 0-100%, default 60%): kick threshold =
+  (0.85 - 0.75 x sensitivity) x reference, so 0% = 0.85, 60% = 0.40 (= v1.0.0), 100% = 0.10. Higher is
+  more sensitive.
+- Both keys are optional on load (v1.0.0 files behave as before) and live in the Director group of the
+  properties and the dock's Director tab, each with a one-line help text saying what to change when
+  drops are not detected.
+- **Dock meter**: input level in dBFS after gain (CLIP above -1 dBFS, held 1.5 s), a bass bar with the
+  kick threshold marked, and a kick light that flashes on each detected kick. Published in
+  `DirectorState` and copied to the dock under the existing view mutex; nothing new on the render thread.

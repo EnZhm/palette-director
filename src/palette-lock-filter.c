@@ -114,6 +114,8 @@ static void write_set(obs_data_t *s, const struct pl_set *set, bool def)
 	SET_DOUBLE(s, "breathing", set->breathing);
 	SET_BOOL(s, "rotation", set->rotation);
 	SET_INT(s, "seed", (long long)set->seed);
+	SET_DOUBLE(s, "input_gain_db", set->input_gain_db);
+	SET_DOUBLE(s, "kick_sensitivity", set->kick_sensitivity);
 
 	for (int i = 0; i < set->n_palettes; i++) {
 		char key[64];
@@ -193,6 +195,8 @@ static void set_from_settings(obs_data_t *s, struct pl_set *set)
 	set->breathing = clampf(obs_data_get_double(s, "breathing"), 0.0f, 1.0f);
 	set->rotation = obs_data_get_bool(s, "rotation");
 	set->seed = (unsigned)clampi(obs_data_get_int(s, "seed"), 0, 99999);
+	set->input_gain_db = clampf(obs_data_get_double(s, "input_gain_db"), -12.0f, 24.0f);
+	set->kick_sensitivity = clampf(obs_data_get_double(s, "kick_sensitivity"), 0.0f, 1.0f);
 
 	for (int i = 0; i < set->n_palettes; i++) {
 		char key[64];
@@ -1229,6 +1233,11 @@ static obs_properties_t *palette_lock_properties(void *data)
 	obs_property_list_add_int(phr, "16 beats", 16);
 	obs_property_list_add_int(phr, "32 beats", 32);
 	obs_properties_add_float_slider(gdir, "lock_fade_beats", obs_module_text("LockFade"), 0.25, 8.0, 0.25);
+	b0 = obs_properties_add_float_slider(gdir, "input_gain_db", obs_module_text("InputGain"), -12.0, 24.0, 0.5);
+	obs_property_set_long_description(b0, obs_module_text("InputGain.Help"));
+	b0 = obs_properties_add_float_slider(gdir, "kick_sensitivity", obs_module_text("KickSensitivity"), 0.0, 1.0,
+					     0.01);
+	obs_property_set_long_description(b0, obs_module_text("KickSensitivity.Help"));
 	obs_properties_add_group(gadv, "director", obs_module_text("Director"), OBS_GROUP_NORMAL, gdir);
 
 	/* ---- Lock behaviours ---- */

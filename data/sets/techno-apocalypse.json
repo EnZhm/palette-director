@@ -197,6 +197,8 @@
     },
     "breathing": 0.0,
     "rotation": false,
-    "seed": 2077
+    "seed": 2077,
+    "input_gain_db": 0,
+    "kick_sensitivity": 0.6
   }
 }

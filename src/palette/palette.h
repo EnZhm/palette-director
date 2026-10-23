@@ -25,7 +25,7 @@ deliberately free of any libobs/Qt dependency so the set lifecycle can be unit
 tested and later bridged to the pure-C++ Director (P4) and set files (P6).
 
 Lifecycle rules (design doc "Filter properties"):
-  - A set always holds at least one palette; each palette 2..8 colours.
+  - A set always holds 1..16 palettes; each palette 2..8 colours.
   - Palette names are unique within the set.
   - Deleting the live palette hands the live marker to the next palette
     (the palette that slides into its position), with no hard cut (the
@@ -42,7 +42,8 @@ Lifecycle rules (design doc "Filter properties"):
 extern "C" {
 #endif
 
-#define PL_MAX_PALETTES 8
+#define PL_MAX_PALETTES 16 /* v1 amendments: was 8 */
+#define PL_MAX_PALETTE_HOTKEYS 8 /* "Palette 1-8 go live"; 9-16 via the dock */
 #define PL_MAX_COLOURS 8
 #define PL_NAME_MAX 64
 #define PL_HEX_LEN 8 /* "#RRGGBB" including NUL */

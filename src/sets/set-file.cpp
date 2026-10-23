@@ -591,7 +591,7 @@ extern "C" bool pd_set_parse(const char *json, struct pl_set *out, char *err, si
 
 	const Value *pals = root.get("palettes");
 	if (!pals || pals->type != Value::Type::Array || pals->arr.empty() || pals->arr.size() > PL_MAX_PALETTES)
-		return set_err("'palettes' must be an array of 1-8 palettes");
+		return set_err("'palettes' must be an array of 1-16 palettes");
 	s.n_palettes = static_cast<int>(pals->arr.size());
 	for (int i = 0; i < s.n_palettes; i++) {
 		const Value &pv = pals->arr[static_cast<size_t>(i)];

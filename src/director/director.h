@@ -52,7 +52,7 @@ struct DirectorConfig {
 struct SetFile {
 	std::string name;
 	std::string synesthesia_playlist;
-	std::vector<PaletteSpec> palettes; // 1..8
+	std::vector<PaletteSpec> palettes; // 1..16
 	ColourSettings colour;
 	PaletteChanges palette_changes;
 	DirectorConfig director;

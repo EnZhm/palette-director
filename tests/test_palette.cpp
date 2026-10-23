@@ -8,7 +8,7 @@
 /*
  * Palette set lifecycle (src/palette/palette.c). These tests pin the design-doc
  * rules the Palette Lock filter relies on: unique names, live/edit references
- * that point at a palette (not a position), and the 1..8 / 2..8 bounds.
+ * that point at a palette (not a position), and the 1..16 / 2..8 bounds.
  */
 
 static struct pl_set make_three(int *live)
@@ -152,7 +152,7 @@ TEST_CASE("move keeps the live reference on its palette")
 	CHECK(strcmp(s.palettes[0].name, "Palette 2") == 0);
 }
 
-TEST_CASE("add dedupes names and enforces the 8-palette cap")
+TEST_CASE("add dedupes names and enforces the 16-palette cap")
 {
 	int live = -1;
 	struct pl_set s = make_three(&live);
@@ -161,7 +161,8 @@ TEST_CASE("add dedupes names and enforces the 8-palette cap")
 	REQUIRE(pl_add_palette(&s, "Palette 1", &out)); // collides -> "Palette 1 (2)"
 	CHECK(strcmp(s.palettes[out].name, "Palette 1 (2)") == 0);
 
-	// fill to 8, then the 9th add is rejected
+	CHECK(PL_MAX_PALETTES == 16);
+	// fill to 16, then the 17th add is rejected
 	while (s.n_palettes < PL_MAX_PALETTES) {
 		char nm[PL_NAME_MAX];
 		std::snprintf(nm, sizeof(nm), "Extra %d", s.n_palettes);

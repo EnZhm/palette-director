@@ -82,12 +82,90 @@
         "#D4FF00",
         "#FF4D00"
       ]
+    },
+    {
+      "name": "Blacklight",
+      "mode": "duotone",
+      "colours": [
+        "#05010D",
+        "#FF00A0"
+      ]
+    },
+    {
+      "name": "Acid Rain",
+      "mode": "duotone",
+      "colours": [
+        "#020803",
+        "#39FF14"
+      ]
+    },
+    {
+      "name": "Thermal",
+      "mode": "duotone",
+      "colours": [
+        "#0A0000",
+        "#FF4D00"
+      ]
+    },
+    {
+      "name": "Cold Steel",
+      "mode": "duotone",
+      "colours": [
+        "#01040A",
+        "#00F0FF"
+      ]
+    },
+    {
+      "name": "Nuclear Dawn",
+      "mode": "duotone",
+      "colours": [
+        "#080404",
+        "#FFB000"
+      ]
+    },
+    {
+      "name": "Bruise",
+      "mode": "duotone",
+      "colours": [
+        "#07020F",
+        "#9D00FF"
+      ]
+    },
+    {
+      "name": "Sodium Streetlight",
+      "mode": "gradient_map",
+      "colours": [
+        "#050302",
+        "#3D1A00",
+        "#B34700",
+        "#FF8C00"
+      ]
+    },
+    {
+      "name": "Chernobyl Glow",
+      "mode": "gradient_map",
+      "colours": [
+        "#010502",
+        "#08331A",
+        "#1FA34A",
+        "#7DFF3A"
+      ]
+    },
+    {
+      "name": "Ultraviolet Riot",
+      "mode": "gradient_map",
+      "colours": [
+        "#030010",
+        "#24005C",
+        "#6A00FF",
+        "#C800FF"
+      ]
     }
   ],
   "colour": {
     "strength": 1.0,
     "contrast": 1.2,
-    "keep_brightness": 0.15,
+    "keep_brightness": 0.0,
     "input_black": 0.0,
     "input_white": 1.0,
     "brightness_source": "perceived"
@@ -117,7 +195,7 @@
       "enabled": true,
       "bars": 1
     },
-    "breathing": 0.25,
+    "breathing": 0.0,
     "rotation": false,
     "seed": 2077
   }

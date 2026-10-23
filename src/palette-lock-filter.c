@@ -65,7 +65,7 @@ struct palette_lock_filter {
 
 	struct pd_host *host;
 	obs_hotkey_id hk_named[PD_N_NAMED_HOTKEYS];
-	obs_hotkey_id hk_palette[PL_MAX_PALETTES];
+	obs_hotkey_id hk_palette[PL_MAX_PALETTE_HOTKEYS];
 };
 
 /* ------------------------------------------------------------------------- */
@@ -256,7 +256,7 @@ static void hk_palette(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool 
 	struct palette_lock_filter *f = data;
 	if (!pressed)
 		return;
-	for (int i = 0; i < PL_MAX_PALETTES; i++) {
+	for (int i = 0; i < PL_MAX_PALETTE_HOTKEYS; i++) {
 		if (f->hk_palette[i] == id) {
 			pd_host_command(f->host, PD_CMD_GO_LIVE, i, PD_ORIGIN_HOTKEY);
 			return;
@@ -290,7 +290,7 @@ static void register_hotkeys(struct palette_lock_filter *f, obs_data_t *settings
 	obs_data_t *saved = obs_data_get_obj(settings, "hotkey_bindings");
 	const bool first = !obs_data_get_bool(settings, "hotkeys_initialised");
 
-	for (int i = 0; i < PD_N_NAMED_HOTKEYS + PL_MAX_PALETTES; i++) {
+	for (int i = 0; i < PD_N_NAMED_HOTKEYS + PL_MAX_PALETTE_HOTKEYS; i++) {
 		char key[64], name[192], desc[256];
 		hotkey_key(key, sizeof(key), i);
 		snprintf(name, sizeof(name), "%s.%s", key, fname ? fname : "");
@@ -323,13 +323,13 @@ static void register_hotkeys(struct palette_lock_filter *f, obs_data_t *settings
 	obs_data_release(saved);
 	obs_data_set_bool(settings, "hotkeys_initialised", true);
 	blog(LOG_INFO, "[palette-lock] '%s': %d hotkeys registered (%s bindings)", fname,
-	     PD_N_NAMED_HOTKEYS + PL_MAX_PALETTES, first ? "default" : "saved");
+	     PD_N_NAMED_HOTKEYS + PL_MAX_PALETTE_HOTKEYS, first ? "default" : "saved");
 }
 
 static void save_hotkeys(struct palette_lock_filter *f, obs_data_t *settings)
 {
 	obs_data_t *saved = obs_data_create();
-	for (int i = 0; i < PD_N_NAMED_HOTKEYS + PL_MAX_PALETTES; i++) {
+	for (int i = 0; i < PD_N_NAMED_HOTKEYS + PL_MAX_PALETTE_HOTKEYS; i++) {
 		obs_hotkey_id id = *hotkey_slot(f, i);
 		if (id == OBS_INVALID_HOTKEY_ID)
 			continue;
@@ -350,7 +350,7 @@ static void unregister_hotkeys(struct palette_lock_filter *f)
 	for (int i = 0; i < PD_N_NAMED_HOTKEYS; i++)
 		if (f->hk_named[i] != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(f->hk_named[i]);
-	for (int i = 0; i < PL_MAX_PALETTES; i++)
+	for (int i = 0; i < PL_MAX_PALETTE_HOTKEYS; i++)
 		if (f->hk_palette[i] != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(f->hk_palette[i]);
 }
@@ -442,7 +442,7 @@ static void *palette_lock_create(obs_data_t *settings, obs_source_t *source)
 	f->force_live = -1;
 	for (int i = 0; i < PD_N_NAMED_HOTKEYS; i++)
 		f->hk_named[i] = OBS_INVALID_HOTKEY_ID;
-	for (int i = 0; i < PL_MAX_PALETTES; i++)
+	for (int i = 0; i < PL_MAX_PALETTE_HOTKEYS; i++)
 		f->hk_palette[i] = OBS_INVALID_HOTKEY_ID;
 
 	if (!obs_data_has_user_value(settings, "audio_source")) {

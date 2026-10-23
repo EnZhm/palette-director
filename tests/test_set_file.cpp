@@ -33,19 +33,30 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	REQUIRE_MESSAGE(pd_set_parse(src.c_str(), &s, err, sizeof(err)), err);
 	CHECK(std::string(s.name) == "Techno Apocalypse");
 	CHECK(std::string(s.synesthesia_playlist) == "Techno Apocalypse");
-	REQUIRE(s.n_palettes == 7);
-	CHECK(std::string(s.palettes[0].name) == "Neon Grid");
-	CHECK(s.palettes[0].n_colours == 5);
-	CHECK(std::string(s.palettes[6].name) == "Spectrum Fallout");
-	CHECK(s.palettes[6].n_colours == 8);
-	for (int i = 0; i < 7; i++)
-		CHECK(s.palettes[i].mode == PL_MODE_GRADIENT);
+	/* v1 amendments: the 7 original palettes unchanged, then 6 duotones + 3 gradient maps */
+	REQUIRE(s.n_palettes == 16);
+	const char *names[16] = {"Neon Grid",        "Toxic Rain",         "Fallout Amber",
+				 "Synth Violet",     "Ice Circuit",        "Red Alert",
+				 "Spectrum Fallout", "Blacklight",         "Acid Rain",
+				 "Thermal",          "Cold Steel",         "Nuclear Dawn",
+				 "Bruise",           "Sodium Streetlight", "Chernobyl Glow",
+				 "Ultraviolet Riot"};
+	for (int i = 0; i < 16; i++) {
+		INFO("palette " << i);
+		CHECK(std::string(s.palettes[i].name) == names[i]);
+		CHECK(s.palettes[i].mode == ((i >= 7 && i <= 12) ? PL_MODE_DUOTONE : PL_MODE_GRADIENT));
+		CHECK(s.palettes[i].n_colours == (i == 6 ? 8 : (i <= 5 ? 5 : (i <= 12 ? 2 : 4))));
+	}
 	char hex[PL_HEX_LEN];
 	pl_colour_to_hex(s.palettes[0].colours[2], hex);
 	CHECK(std::string(hex) == "#FF00A0");
+	pl_colour_to_hex(s.palettes[7].colours[1], hex);
+	CHECK(std::string(hex) == "#FF00A0");
+	pl_colour_to_hex(s.palettes[15].colours[3], hex);
+	CHECK(std::string(hex) == "#C800FF");
 	CHECK(s.strength == doctest::Approx(1.0f));
 	CHECK(s.contrast == doctest::Approx(1.2f));
-	CHECK(s.preserve == doctest::Approx(0.15f));
+	CHECK(s.preserve == doctest::Approx(0.0f));
 	CHECK(s.input_black == doctest::Approx(0.0f));
 	CHECK(s.input_white == doctest::Approx(1.0f));
 	CHECK(s.brightness_source == PL_BSRC_PERCEIVED);
@@ -64,7 +75,7 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	CHECK(s.off_on_breakdown == false);
 	CHECK(s.off_on_drop == true);
 	CHECK(s.drop_bars == 1);
-	CHECK(s.breathing == doctest::Approx(0.25f));
+	CHECK(s.breathing == doctest::Approx(0.0f));
 	CHECK(s.rotation == false);
 	CHECK(s.seed == 2077u);
 }
@@ -151,6 +162,29 @@ TEST_CASE("invalid set files are rejected with a reason")
 				 "[\"#000000\", \"#FFFFFF\"]}], \"palette_changes\": {\"breakdown_palette\": \"zz\"}}",
 				 &s, err, sizeof(err)));
 	CHECK_FALSE(pd_set_parse("not json", &s, err, sizeof(err)));
+}
+
+TEST_CASE("a 17th palette is rejected on load")
+{
+	std::string j = "{\"schema\": 2, \"name\": \"Big\", \"palettes\": [";
+	for (int i = 0; i < 17; i++)
+		j += std::string(i ? "," : "") + "{\"name\": \"p" + std::to_string(i) +
+		     "\", \"colours\": [\"#000000\", \"#FFFFFF\"]}";
+	j += "]}";
+	struct pl_set s;
+	char err[256] = {0};
+	CHECK_FALSE(pd_set_parse(j.c_str(), &s, err, sizeof(err)));
+	CHECK(std::strstr(err, "1-16") != nullptr);
+	/* 16 is fine and survives a round trip */
+	const std::string j16 = j.substr(0, j.rfind(",{")) + "]}";
+	REQUIRE_MESSAGE(pd_set_parse(j16.c_str(), &s, err, sizeof(err)), err);
+	CHECK(s.n_palettes == 16);
+	char *out = pd_set_write(&s);
+	struct pl_set s2;
+	REQUIRE(pd_set_parse(out, &s2, err, sizeof(err)));
+	CHECK(s2.n_palettes == 16);
+	CHECK(std::string(s2.palettes[15].name) == "p15");
+	pd_set_free(out);
 }
 
 TEST_CASE("v1 look keys are optional on load and round-trip when present")

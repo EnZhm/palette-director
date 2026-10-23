@@ -17,6 +17,8 @@ public:
 	Section update(uint64_t beat, bool bass_present, int phrase_beats);
 
 	Section current() const { return cur_; }
+	// Silent feed: no information about bass, so don't let the breakdown timer run.
+	void hold(uint64_t beat) { last_bass_beat_ = beat; }
 	void reset()
 	{
 		cur_ = Section::Groove;

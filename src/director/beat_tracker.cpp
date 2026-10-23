@@ -16,6 +16,7 @@ BeatTracker::BeatTracker(uint32_t sample_rate, std::size_t hop, double fallback_
 	max_buf_ = static_cast<std::size_t>(env_rate_ * 8.0); // ~8 s window
 	lag_min_ = static_cast<std::size_t>(env_rate_ * 60.0 / 180.0);
 	lag_max_ = static_cast<std::size_t>(env_rate_ * 60.0 / 90.0);
+	recent_len_ = static_cast<std::size_t>(env_rate_ * 2.0); // ~2 s (>= 3 beats at 90 BPM)
 }
 
 void BeatTracker::reset()
@@ -27,6 +28,7 @@ void BeatTracker::reset()
 	have_lock_ = false;
 	locked_bpm_ = 0.0;
 	onset_buf_.clear();
+	recent_max_.clear();
 	onset_peak_ = 0.0;
 }
 
@@ -75,6 +77,17 @@ void BeatTracker::process(double onset, bool silent, double dt)
 		}
 	}
 
+	// A breakdown's onset envelope is only residue of the pad (no transients); its periodic
+	// pattern can still win the autocorrelation with a high normalised score. Require the
+	// recent onset activity to be a real fraction of the onset peak before trusting it.
+	onset_peak_ = std::max(onset_peak_ * 0.999, onset);
+	recent_max_.push_back(onset);
+	if (recent_max_.size() > recent_len_)
+		recent_max_.pop_front();
+	const double recent = *std::max_element(recent_max_.begin(), recent_max_.end());
+	if (recent < 0.1 * onset_peak_)
+		confidence_ = 0.0;
+
 	if (confidence_ >= conf_threshold_) {
 		have_lock_ = true;
 		locked_bpm_ = estimated_bpm_;
@@ -95,7 +108,6 @@ void BeatTracker::process(double onset, bool silent, double dt)
 	beats_ += dt * effective_bpm_ / 60.0;
 
 	// Soft phase-lock: a strong onset near a beat pulls the grid halfway toward it.
-	onset_peak_ = std::max(onset_peak_ * 0.999, onset);
 	if (onset > 0.5 * onset_peak_ && onset_peak_ > 1e-12) {
 		const double frac = beats_ - std::floor(beats_);
 		const double err = (frac < 0.5) ? frac : (frac - 1.0);

@@ -90,6 +90,7 @@ struct Director::Impl {
 		scheduler_.reset(make_sched_cfg(s));
 		section_.reset();
 		log_.clear();
+		out_.clear();
 		pending_.clear();
 		beat_bass_fast_max_ = 0.0;
 		silence_smooth_ = 0.0;
@@ -108,8 +109,24 @@ struct Director::Impl {
 	{
 		for (Event e : evs) {
 			e.phrase = e.beat / static_cast<uint64_t>(phrase_beats_);
-			log_.push_back(std::move(e));
+			if (drain_enabled_)
+				out_.push_back(e);
+			if (keep_history_)
+				log_.push_back(std::move(e));
 		}
+	}
+
+	void update(const SetFile &s, int live)
+	{
+		const bool fallback_changed = s.director.fallback_bpm != set_.director.fallback_bpm;
+		set_ = s;
+		breakdown_index_ = resolve_breakdown(s);
+		phrase_beats_ = s.director.phrase_beats;
+		if (phrase_beats_ < 1)
+			phrase_beats_ = 32;
+		scheduler_.reconfigure(make_sched_cfg(s), live);
+		if (fallback_changed)
+			tracker_.set_fallback_bpm(s.director.fallback_bpm);
 	}
 
 	void drain_commands()
@@ -131,6 +148,8 @@ struct Director::Impl {
 		const double peak = std::max(bass_peak_, 1e-9);
 		const bool kick = !silent && (bass_fast_max > 0.4 * peak);
 
+		if (silent)
+			section_.hold(b);
 		if (!silent) {
 			const Section sec = section_.update(b, kick, phrase_beats_);
 			if (sec != cur_section_) {
@@ -176,6 +195,14 @@ struct Director::Impl {
 		st.pfade = scheduler_.pfade();
 		st.cooldown_phrases_left = scheduler_.cooldown_left();
 		st.lock_on = st.mix_target >= 0.5f;
+		const double bf = tracker_.beats();
+		st.beat_frac = static_cast<float>(bf - std::floor(bf));
+		st.next_palette = scheduler_.peek_next();
+		st.paused = scheduler_.paused();
+		st.forced_on = scheduler_.forced_on();
+		st.force_off = scheduler_.force_off();
+		st.enabled = set_.director.enabled;
+		st.silent = silence_smooth_ < kSilenceThreshold;
 		return st;
 	}
 
@@ -189,6 +216,9 @@ struct Director::Impl {
 	SectionState section_;
 	CommandQueue queue_;
 	std::vector<Event> log_;
+	std::vector<Event> out_;
+	bool keep_history_ = true;
+	bool drain_enabled_ = false;
 
 	std::vector<float> pending_;
 
@@ -271,6 +301,31 @@ void Director::apply_set(const SetFile &s)
 	if (!impl_)
 		return;
 	impl_->apply(s);
+}
+
+void Director::update_set(const SetFile &s, int live_palette)
+{
+	if (!impl_)
+		return;
+	impl_->update(s, live_palette);
+}
+
+void Director::drain_events(std::vector<Event> &out)
+{
+	if (!impl_)
+		return;
+	impl_->drain_enabled_ = true;
+	out.insert(out.end(), impl_->out_.begin(), impl_->out_.end());
+	impl_->out_.clear();
+}
+
+void Director::set_keep_history(bool keep)
+{
+	if (!impl_)
+		return;
+	impl_->keep_history_ = keep;
+	if (!keep)
+		impl_->log_.clear();
 }
 
 const std::vector<Event> &Director::events() const

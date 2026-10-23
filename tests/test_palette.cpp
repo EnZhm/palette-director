@@ -8,7 +8,7 @@
 /*
  * Palette set lifecycle (src/palette/palette.c). These tests pin the design-doc
  * rules the Palette Lock filter relies on: unique names, live/edit references
- * that point at a palette (not a position), and the 1..8 / 2..8 bounds.
+ * that point at a palette (not a position), and the 1..16 / 2..8 bounds.
  */
 
 static struct pl_set make_three(int *live)
@@ -152,7 +152,7 @@ TEST_CASE("move keeps the live reference on its palette")
 	CHECK(strcmp(s.palettes[0].name, "Palette 2") == 0);
 }
 
-TEST_CASE("add dedupes names and enforces the 8-palette cap")
+TEST_CASE("add dedupes names and enforces the 16-palette cap")
 {
 	int live = -1;
 	struct pl_set s = make_three(&live);
@@ -161,7 +161,8 @@ TEST_CASE("add dedupes names and enforces the 8-palette cap")
 	REQUIRE(pl_add_palette(&s, "Palette 1", &out)); // collides -> "Palette 1 (2)"
 	CHECK(strcmp(s.palettes[out].name, "Palette 1 (2)") == 0);
 
-	// fill to 8, then the 9th add is rejected
+	CHECK(PL_MAX_PALETTES == 16);
+	// fill to 16, then the 17th add is rejected
 	while (s.n_palettes < PL_MAX_PALETTES) {
 		char nm[PL_NAME_MAX];
 		std::snprintf(nm, sizeof(nm), "Extra %d", s.n_palettes);
@@ -249,4 +250,25 @@ TEST_CASE("#FF00A0 round-trips exactly through the obs int and hex helpers")
 	char out[PL_HEX_LEN];
 	pl_colour_to_hex(back, out);
 	CHECK(strcmp(out, hex) == 0);
+}
+
+TEST_CASE("coverage: breathing only dips below coverage, and is off while silent")
+{
+	// coverage 1, breathing 0.5, lock on, silent feed: pure palette (amt 1)
+	CHECK(pl_lock_amount(1.0f, 0.5f, 0.0f, 1.0f, true) == doctest::Approx(1.0f));
+	// with audio and no bass, breathing dips to 1 - b
+	CHECK(pl_lock_amount(1.0f, 0.5f, 0.0f, 1.0f, false) == doctest::Approx(0.5f));
+	// on a kick (bass*1.2 >= 1) it is back at coverage, never above
+	CHECK(pl_lock_amount(0.8f, 0.5f, 1.0f, 1.0f, false) == doctest::Approx(0.8f));
+	CHECK(pl_lock_amount(0.8f, 1.0f, 2.0f, 1.0f, false) <= 0.8f + 1e-6f);
+	// lock mix scales it (random-off fade)
+	CHECK(pl_lock_amount(1.0f, 0.0f, 0.0f, 0.25f, false) == doctest::Approx(0.25f));
+	// v1 defaults: breathing 0, keep brightness 0, full input range, perceived
+	struct pl_set d;
+	pl_set_init(&d);
+	CHECK(d.breathing == doctest::Approx(0.0f));
+	CHECK(d.preserve == doctest::Approx(0.0f));
+	CHECK(d.input_black == doctest::Approx(0.0f));
+	CHECK(d.input_white == doctest::Approx(1.0f));
+	CHECK(d.brightness_source == PL_BSRC_PERCEIVED);
 }

@@ -188,3 +188,35 @@ TEST_CASE("trigger: Manual makes no automatic changes")
 	pdtest::feed(d, std::vector<float>(4410, 0.0f), 44100); // drain
 	CHECK(d.snapshot().live_palette == 2);
 }
+
+TEST_CASE("16-palette set: shuffle plays all 15 normal palettes before any repeat")
+{
+	constexpr int kNormal = 15; // palettes 0..14; breakdown = index 15
+	pd::SetFile s = pdtest::make_set(16, "Pal 15");
+	s.palette_changes.order = pd::ChangeOrder::Shuffle;
+	s.palette_changes.trigger = pd::ChangeTrigger::Phrases;
+	s.palette_changes.every_phrases = 1;
+	s.director.phrase_beats = 16;
+	s.director.random_off = false;
+	s.director.seed = 2077;
+	pd::Director d(s);
+	// 136 bars = 544 beats -> 33 phrase boundaries (16-beat phrases) = 2+ full passes of 15
+	const WavMono w = pdtest::gen_kick(128.0, 136);
+	pdtest::feed(d, w.to_float(), w.sample_rate);
+
+	const auto pcs = pdtest::palette_changes(d.events());
+	REQUIRE(pcs.size() >= 2 * kNormal);
+	std::vector<int> seq;
+	for (const auto &e : pcs)
+		seq.push_back(e.palette);
+	for (int v : seq)
+		CHECK(v != 15);
+	for (std::size_t i = 0; i + kNormal <= seq.size(); ++i) {
+		std::vector<int> window(seq.begin() + static_cast<std::ptrdiff_t>(i),
+					seq.begin() + static_cast<std::ptrdiff_t>(i + kNormal));
+		std::sort(window.begin(), window.end());
+		CAPTURE(i);
+		for (int p = 0; p < kNormal; ++p)
+			CHECK(window[static_cast<std::size_t>(p)] == p);
+	}
+}

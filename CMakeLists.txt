@@ -6,6 +6,7 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
+option(PD_TEST_HOOKS "Compile the sandbox test hooks (dock test cycle, UI auto answers); never in releases" OFF)
 
 include(compilerconfig)
 include(defaults)
@@ -42,8 +43,22 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.c src/palette-lock-filter.c src/palette/palette.c src/dock/palette-director-dock.cpp
+  PRIVATE
+    src/plugin-main.c
+    src/palette-lock-filter.c
+    src/palette-lock-host.cpp
+    src/palette/palette.c
+    src/sets/set-file.cpp
+    src/sets/set-store.cpp
+    src/ui/pd-ui.cpp
+    src/director/director.cpp
+    src/director/analysis.cpp
+    src/director/beat_tracker.cpp
+    src/director/section_state.cpp
+    src/director/scheduler.cpp
+    src/dock/palette-director-dock.cpp
 )
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
 if(HAVE_FRONTEND_API)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ENABLE_FRONTEND_API)
@@ -51,6 +66,11 @@ endif()
 
 if(ENABLE_QT)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ENABLE_QT)
+endif()
+
+if(PD_TEST_HOOKS)
+  message(WARNING "PD_TEST_HOOKS is ON: sandbox test hooks are compiled in (do not ship this build)")
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PD_TEST_HOOKS)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

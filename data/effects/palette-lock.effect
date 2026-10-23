@@ -34,6 +34,11 @@ uniform float pfade;
 uniform float amt;
 uniform float contrast;
 uniform float preserve;
+/* v1 amendments: scalars appended after the original uniforms (D3D11 cbuffer packing,
+ * tests/test_cbuffer_layout.cpp) */
+uniform float in_black;
+uniform float in_white;
+uniform int bsrc;
 
 sampler_state textureSampler {
 	Filter   = Linear;
@@ -54,9 +59,37 @@ VertData VSDefault(VertData vert_in)
 	return vert_out;
 }
 
+/* Colour space: the filter declares OBS_SOURCE_SRGB, so under linear-sRGB
+ * rendering OBS hands us linearised texels and expects linear output. The
+ * maths and palette hex values are gamma (sRGB) space, so convert in, map,
+ * convert back. Palette uniforms are uploaded as gamma-space hex values. */
+float3 srgbToLinear(float3 c)
+{
+	float3 lo = c / 12.92;
+	float3 hi = pow((max(c, 0.0) + 0.055) / 1.055, 2.4);
+	return lerp(hi, lo, step(c, 0.04045));
+}
+
+float3 linearToSrgb(float3 c)
+{
+	float3 lo = c * 12.92;
+	float3 hi = 1.055 * pow(max(c, 0.0), 1.0 / 2.4) - 0.055;
+	return lerp(hi, lo, step(c, 0.0031308));
+}
+
 float luma(float3 c)
 {
 	return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+/* "Brightness from": 0 perceived (Rec.709), 1 max(r,g,b), 2 average */
+float brightness(float3 c)
+{
+	if (bsrc == 1)
+		return max(c.r, max(c.g, c.b));
+	if (bsrc == 2)
+		return (c.r + c.g + c.b) / 3.0;
+	return luma(c);
 }
 
 float3 lumaMatch(float3 c, float l)
@@ -84,7 +117,9 @@ float3 mapB(float l)
 
 float3 lockColour(float3 src)
 {
-	float l = clamp((luma(src) - 0.5) * contrast + 0.5, 0.0, 1.0);
+	/* input range first (black..white -> 0..1), then contrast */
+	float l = saturate((brightness(src) - in_black) / max(in_white - in_black, 0.01));
+	l = clamp((l - 0.5) * contrast + 0.5, 0.0, 1.0);
 	float3 m = lerp(mapA(l), mapB(l), pfade);
 	return lerp(m, lumaMatch(m, l), preserve);
 }
@@ -92,8 +127,9 @@ float3 lockColour(float3 src)
 float4 PSLockColour(VertData vert_in) : TARGET
 {
 	float4 src = image.Sample(textureSampler, vert_in.uv);
-	float3 col = lerp(src.rgb, lockColour(src.rgb), amt);
-	return float4(col, src.a);
+	float3 g = linearToSrgb(src.rgb);
+	float3 col = lerp(g, lockColour(g), amt);
+	return float4(srgbToLinear(col), src.a);
 }
 
 technique Draw

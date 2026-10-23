@@ -61,7 +61,7 @@ def palette_array(name):
 
 # ---- CPU reference (independent port of the mock maths) -------------------
 def cpu_reference(src, palA, nA, modeA, palB, nB, modeB, pfade, amt, contrast,
-                  preserve):
+                  preserve, in_black=0.0, in_white=1.0, bsrc=0):
     src = src.astype(np.float64)
 
     def luma(c):
@@ -81,7 +81,16 @@ def cpu_reference(src, palA, nA, modeA, palB, nB, modeB, pfade, amt, contrast,
         f = (x - i)[..., None]
         return pal[i] + (pal[i + 1] - pal[i]) * f
 
-    l = np.clip((luma(src) - 0.5) * contrast + 0.5, 0.0, 1.0)
+    def brightness(c):
+        if bsrc == 1:
+            return c.max(axis=-1)
+        if bsrc == 2:
+            return c.mean(axis=-1)
+        return luma(c)
+
+    # v1 amendments: input range (black..white -> 0..1) before contrast
+    l = np.clip((brightness(src) - in_black) / max(in_white - in_black, 0.01), 0.0, 1.0)
+    l = np.clip((l - 0.5) * contrast + 0.5, 0.0, 1.0)
     m = map_x(palA, nA, modeA, l) * (1.0 - pfade) + \
         map_x(palB, nB, modeB, l) * pfade
     m = m * (1.0 - preserve) + luma_match(m, l) * preserve
@@ -102,9 +111,17 @@ uniform float pfade;
 uniform float amt;
 uniform float contrast;
 uniform float preserve;
+uniform float in_black;
+uniform float in_white;
+uniform int bsrc;
 out vec4 fragColor;
 
 float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+float brightness(vec3 c){
+    if (bsrc == 1) return max(c.r, max(c.g, c.b));
+    if (bsrc == 2) return (c.r + c.g + c.b) / 3.0;
+    return luma(c);
+}
 vec3 lumaMatch(vec3 c, float l){ return clamp(c * (l / max(luma(c), 0.002)), 0.0, 1.0); }
 vec3 mapA(float l){
     if (modeA == 1) return mix(palA[0].rgb, palA[nA - 1].rgb, smoothstep(0.0, 1.0, l));
@@ -119,7 +136,8 @@ vec3 mapB(float l){
     return mix(palB[i].rgb, palB[i + 1].rgb, x - float(i));
 }
 vec3 lockColour(vec3 src){
-    float l = clamp((luma(src) - 0.5) * contrast + 0.5, 0.0, 1.0);
+    float l = clamp((brightness(src) - in_black) / max(in_white - in_black, 0.01), 0.0, 1.0);
+    l = clamp((l - 0.5) * contrast + 0.5, 0.0, 1.0);
     vec3 m = mix(mapA(l), mapB(l), pfade);
     return mix(m, lumaMatch(m, l), preserve);
 }
@@ -196,6 +214,9 @@ def render_frame(ctx, prog, vao, src, params):
     prog["amt"].value = params["amt"]
     prog["contrast"].value = params["contrast"]
     prog["preserve"].value = params["preserve"]
+    prog["in_black"].value = params.get("in_black", 0.0)
+    prog["in_white"].value = params.get("in_white", 1.0)
+    prog["bsrc"].value = params.get("bsrc", 0)
 
     fbo.use()
     fbo.clear()
@@ -272,6 +293,16 @@ def main():
          frame_patch, dict(palA=palette_array("Breakdown Duo"), nA=2, modeA=1,
                            palB=palette_array("Ice"), nB=4, modeB=0, pfade=0.75,
                            amt=0.6, contrast=0.8, preserve=1.0)),
+        ("v1 input range + max brightness",
+         frame_patch, dict(palA=palette_array("Night Neon"), nA=4, modeA=0,
+                           palB=palette_array("Ice"), nB=4, modeB=0, pfade=1.0,
+                           amt=1.0, contrast=1.2, preserve=0.0,
+                           in_black=0.1, in_white=0.75, bsrc=1)),
+        ("v1 average brightness, duotone",
+         frame_random, dict(palA=palette_array("Breakdown Duo"), nA=2, modeA=1,
+                            palB=palette_array("Breakdown Duo"), nB=2, modeB=1,
+                            pfade=1.0, amt=1.0, contrast=1.0, preserve=0.0,
+                            in_black=0.0, in_white=1.0, bsrc=2)),
     ]
 
     all_ok = True

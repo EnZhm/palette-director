@@ -1,0 +1,202 @@
+{
+  "schema": 2,
+  "name": "Techno Apocalypse",
+  "synesthesia_playlist": "Techno Apocalypse",
+  "palettes": [
+    {
+      "name": "Neon Grid",
+      "mode": "gradient_map",
+      "colours": [
+        "#05010D",
+        "#2A0A4A",
+        "#FF00A0",
+        "#00F0FF",
+        "#E8FDFF"
+      ]
+    },
+    {
+      "name": "Toxic Rain",
+      "mode": "gradient_map",
+      "colours": [
+        "#020803",
+        "#0B3D1A",
+        "#39FF14",
+        "#D4FF00",
+        "#F7FFE0"
+      ]
+    },
+    {
+      "name": "Fallout Amber",
+      "mode": "gradient_map",
+      "colours": [
+        "#080404",
+        "#4A0F00",
+        "#FF4D00",
+        "#FFB000",
+        "#FFF1C9"
+      ]
+    },
+    {
+      "name": "Synth Violet",
+      "mode": "gradient_map",
+      "colours": [
+        "#07020F",
+        "#3B0A6B",
+        "#9D00FF",
+        "#FF2ED1",
+        "#FFD6F6"
+      ]
+    },
+    {
+      "name": "Ice Circuit",
+      "mode": "gradient_map",
+      "colours": [
+        "#01040A",
+        "#002B5C",
+        "#0077FF",
+        "#00FFE1",
+        "#EFFFFF"
+      ]
+    },
+    {
+      "name": "Red Alert",
+      "mode": "gradient_map",
+      "colours": [
+        "#0A0000",
+        "#3D0008",
+        "#FF0033",
+        "#FF5E7A",
+        "#FFE3E8"
+      ]
+    },
+    {
+      "name": "Spectrum Fallout",
+      "mode": "gradient_map",
+      "colours": [
+        "#05000A",
+        "#FF0033",
+        "#9D00FF",
+        "#0077FF",
+        "#00F0FF",
+        "#39FF14",
+        "#D4FF00",
+        "#FF4D00"
+      ]
+    },
+    {
+      "name": "Blacklight",
+      "mode": "duotone",
+      "colours": [
+        "#05010D",
+        "#FF00A0"
+      ]
+    },
+    {
+      "name": "Acid Rain",
+      "mode": "duotone",
+      "colours": [
+        "#020803",
+        "#39FF14"
+      ]
+    },
+    {
+      "name": "Thermal",
+      "mode": "duotone",
+      "colours": [
+        "#0A0000",
+        "#FF4D00"
+      ]
+    },
+    {
+      "name": "Cold Steel",
+      "mode": "duotone",
+      "colours": [
+        "#01040A",
+        "#00F0FF"
+      ]
+    },
+    {
+      "name": "Nuclear Dawn",
+      "mode": "duotone",
+      "colours": [
+        "#080404",
+        "#FFB000"
+      ]
+    },
+    {
+      "name": "Bruise",
+      "mode": "duotone",
+      "colours": [
+        "#07020F",
+        "#9D00FF"
+      ]
+    },
+    {
+      "name": "Sodium Streetlight",
+      "mode": "gradient_map",
+      "colours": [
+        "#050302",
+        "#3D1A00",
+        "#B34700",
+        "#FF8C00"
+      ]
+    },
+    {
+      "name": "Chernobyl Glow",
+      "mode": "gradient_map",
+      "colours": [
+        "#010502",
+        "#08331A",
+        "#1FA34A",
+        "#7DFF3A"
+      ]
+    },
+    {
+      "name": "Ultraviolet Riot",
+      "mode": "gradient_map",
+      "colours": [
+        "#030010",
+        "#24005C",
+        "#6A00FF",
+        "#C800FF"
+      ]
+    }
+  ],
+  "colour": {
+    "strength": 1.0,
+    "contrast": 1.2,
+    "keep_brightness": 0.0,
+    "input_black": 0.0,
+    "input_white": 1.0,
+    "brightness_source": "perceived"
+  },
+  "palette_changes": {
+    "trigger": "phrases",
+    "every_phrases": 8,
+    "chance": 0.25,
+    "order": "shuffle",
+    "crossfade_beats": 1,
+    "breakdown_palette": "Spectrum Fallout"
+  },
+  "director": {
+    "enabled": true,
+    "phrase_beats": 32,
+    "lock_fade_beats": 1,
+    "fallback_bpm": 132,
+    "random_off": {
+      "enabled": true,
+      "chance": 0.12,
+      "bars_min": 1,
+      "bars_max": 2,
+      "cooldown_phrases": 3
+    },
+    "off_on_breakdown": false,
+    "off_on_drop": {
+      "enabled": true,
+      "bars": 1
+    },
+    "breathing": 0.0,
+    "rotation": false,
+    "seed": 2077
+  }
+}

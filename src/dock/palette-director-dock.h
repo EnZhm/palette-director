@@ -22,7 +22,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 extern "C" {
 #endif
 
+#include <stdbool.h>
+
+#include <obs-module.h>
+
 void palette_director_dock_load(void);
+/* show + raise the dock and select `filter` in its instance picker (UI thread) */
+void palette_director_dock_show(obs_source_t *filter);
+/* false when the plugin was built without the frontend API / Qt */
+bool palette_director_dock_available(void);
 
 #ifdef __cplusplus
 }

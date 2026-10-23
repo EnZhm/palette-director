@@ -52,7 +52,7 @@ struct DirectorConfig {
 struct SetFile {
 	std::string name;
 	std::string synesthesia_playlist;
-	std::vector<PaletteSpec> palettes; // 1..8
+	std::vector<PaletteSpec> palettes; // 1..16
 	ColourSettings colour;
 	PaletteChanges palette_changes;
 	DirectorConfig director;
@@ -73,6 +73,14 @@ struct DirectorState {
 	float pfade = 1.0f;    // 0..1 crossfade progress
 	int cooldown_phrases_left = 0;
 	bool lock_on = true;
+	// Added for the filter + dock (P4/P5); not in spec 4.2 but derived from the same state.
+	float beat_frac = 0.0f; // fractional part of the beat clock (beat lights)
+	int next_palette = -1;  // pickNextPreview: next palette the scheduler would pick, -1 if none
+	bool paused = false;    // director paused (Pause / Panic)
+	bool forced_on = false; // Force on toggle
+	bool force_off = false; // Force off (hold)
+	bool enabled = true;    // DirectorConfig::enabled
+	bool silent = true;     // feed is silent (fallback BPM in use)
 };
 
 // ---- Director decision log (feeds the dock log in P5 and the offline tests) ----
@@ -108,6 +116,15 @@ public:
 	void push_command(Command cmd, int palette_index = -1);
 	void apply_set(const SetFile &);
 	const std::vector<Event> &events() const;
+
+	// P4 additions (filter host). update_set re-configures a running Director without
+	// resetting the beat clock / analysis; live_palette >= 0 also sets the live palette
+	// (used when the filter restores a saved live palette or the palette list changes).
+	void update_set(const SetFile &, int live_palette = -1);
+	// Moves the events produced since the last call into `out` (appended).
+	void drain_events(std::vector<Event> &out);
+	// When false, events() keeps no history (long-running host; use drain_events).
+	void set_keep_history(bool keep);
 
 private:
 	struct Impl;

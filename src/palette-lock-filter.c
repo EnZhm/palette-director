@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>/
 #include "sets/set-file.h"
 #include "sets/set-store.h"
 #include "ui/pd-ui.h"
+#include "dock/palette-director-dock.h"
 
 #define S_PALETTE "palette.%d.name"
 #define S_MODE "palette.%d.mode"
@@ -395,6 +396,7 @@ static void palette_lock_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "live_palette", 0);
 	obs_data_set_default_int(settings, "edit_palette", 0);
 	obs_data_set_default_string(settings, "audio_source", "");
+	obs_data_set_default_bool(settings, "show_advanced", false);
 }
 
 static void push_to_host(struct palette_lock_filter *f, obs_data_t *settings)
@@ -774,11 +776,8 @@ static void unique_set_name(char *out, size_t n, const char *base)
 	}
 }
 
-static bool btn_set_action(obs_properties_t *props, obs_property_t *property, void *data)
+static bool set_action_impl(struct palette_lock_filter *f, const char *name)
 {
-	(void)props;
-	struct palette_lock_filter *f = data;
-	const char *name = obs_property_name(property);
 	struct pl_set ns = f->set;
 	const char *title = obs_module_text("PaletteDirector");
 
@@ -905,6 +904,12 @@ static bool btn_set_action(obs_properties_t *props, obs_property_t *property, vo
 	return false;
 }
 
+static bool btn_set_action(obs_properties_t *props, obs_property_t *property, void *data)
+{
+	(void)props;
+	return set_action_impl(data, obs_property_name(property));
+}
+
 static bool on_set_selected(void *priv, obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
 {
 	(void)props;
@@ -989,11 +994,13 @@ static bool enum_audio_list(void *param, obs_source_t *src)
 	return true;
 }
 
-static void add_look_properties(obs_properties_t *g)
+static void add_look_properties(obs_properties_t *g, bool with_coverage)
 {
 	obs_property_t *p;
-	p = obs_properties_add_float_slider(g, "strength", obs_module_text("Coverage"), 0.0, 1.0, 0.01);
-	obs_property_set_long_description(p, obs_module_text("Coverage.Help"));
+	if (with_coverage) {
+		p = obs_properties_add_float_slider(g, "strength", obs_module_text("Coverage"), 0.0, 1.0, 0.01);
+		obs_property_set_long_description(p, obs_module_text("Coverage.Help"));
+	}
 	p = obs_properties_add_float_slider(g, "input_black", obs_module_text("InputBlack"), 0.0, 0.5, 0.01);
 	obs_property_set_long_description(p, obs_module_text("InputBlack.Help"));
 	p = obs_properties_add_float_slider(g, "input_white", obs_module_text("InputWhite"), 0.5, 1.0, 0.01);
@@ -1010,6 +1017,57 @@ static void add_look_properties(obs_properties_t *g)
 	obs_property_set_long_description(p, obs_module_text("KeepBrightness.Help"));
 }
 
+static bool btn_open_panel(obs_properties_t *props, obs_property_t *property, void *data)
+{
+	(void)props;
+	(void)property;
+	struct palette_lock_filter *f = data;
+	palette_director_dock_show(f->context);
+	return false;
+}
+
+static bool on_show_advanced(void *priv, obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
+{
+	(void)priv;
+	(void)property;
+	obs_property_set_visible(obs_properties_get(props, "advanced"), obs_data_get_bool(settings, "show_advanced"));
+	return true;
+}
+
+static bool on_behaviour_changed(void *priv, obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
+{
+	(void)priv;
+	(void)property;
+	const bool ro = obs_data_get_bool(settings, "random_off");
+	obs_property_set_visible(obs_properties_get(props, "random_chance"), ro);
+	obs_property_set_visible(obs_properties_get(props, "bars_min"), ro);
+	obs_property_set_visible(obs_properties_get(props, "bars_max"), ro);
+	obs_property_set_visible(obs_properties_get(props, "cooldown_phrases"), ro);
+	obs_property_set_visible(obs_properties_get(props, "drop_bars"), obs_data_get_bool(settings, "off_on_drop"));
+	return true;
+}
+
+static void add_set_selector(obs_properties_t *g, struct palette_lock_filter *f, int *n_sets_out, bool *listed_out)
+{
+	obs_property_t *set_sel = obs_properties_add_list(g, "set_select", obs_module_text("Set"), OBS_COMBO_TYPE_LIST,
+							  OBS_COMBO_FORMAT_STRING);
+	struct pd_set_entry sets[PD_SETS_MAX];
+	const int n_sets = pd_sets_list(sets, PD_SETS_MAX);
+	bool listed = false;
+	for (int i = 0; i < n_sets; i++) {
+		obs_property_list_add_string(set_sel, sets[i].name, sets[i].name);
+		listed = listed || strcmp(sets[i].name, f->set.name) == 0;
+	}
+	if (!listed)
+		obs_property_list_add_string(set_sel, f->set.name, f->set.name);
+	obs_property_set_modified_callback2(set_sel, on_set_selected, f);
+	*n_sets_out = n_sets;
+	*listed_out = listed;
+}
+
+/* v1 amendments: the dock is the main UI; the properties window is a short fallback with
+ * the essentials on top and everything else in a collapsed "Advanced (also in the panel)"
+ * group, so nothing is lost if the dock is unavailable. */
 static obs_properties_t *palette_lock_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
@@ -1027,20 +1085,29 @@ static obs_properties_t *palette_lock_properties(void *data)
 	const int bd_idx = pl_breakdown_index(&f->set);
 	obs_property_t *b0;
 
+	/* ---- essentials ---- */
+	obs_property_t *hdr = obs_properties_add_text(props, "header", obs_module_text("Props.Header"), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(hdr, OBS_TEXT_INFO_NORMAL);
+	int n_sets = 0;
+	bool listed = false;
+	add_set_selector(props, f, &n_sets, &listed);
+	obs_properties_add_button2(props, "set.load", obs_module_text("LoadFile"), btn_set_action, f);
+	obs_property_t *aud = obs_properties_add_list(props, "audio_source", obs_module_text("AudioSource"),
+						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(aud, obs_module_text("AudioSource.None"), "");
+	obs_enum_sources(enum_audio_list, aud);
+	obs_property_t *cov =
+		obs_properties_add_float_slider(props, "strength", obs_module_text("Coverage"), 0.0, 1.0, 0.01);
+	obs_property_set_long_description(cov, obs_module_text("Coverage.Help"));
+	b0 = obs_properties_add_button2(props, "open_panel", obs_module_text("OpenPanel"), btn_open_panel, f);
+	obs_property_set_enabled(b0, palette_director_dock_available());
+	obs_property_t *adv = obs_properties_add_bool(props, "show_advanced", obs_module_text("ShowAdvanced"));
+	obs_property_set_modified_callback2(adv, on_show_advanced, f);
+
+	obs_properties_t *gadv = obs_properties_create();
+
 	/* ---- Performance set (schema-2 set files, spec 5.1) ---- */
 	obs_properties_t *gset = obs_properties_create();
-	obs_property_t *set_sel = obs_properties_add_list(gset, "set_select", obs_module_text("Set"),
-							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	struct pd_set_entry sets[PD_SETS_MAX];
-	const int n_sets = pd_sets_list(sets, PD_SETS_MAX);
-	bool listed = false;
-	for (int i = 0; i < n_sets; i++) {
-		obs_property_list_add_string(set_sel, sets[i].name, sets[i].name);
-		listed = listed || strcmp(sets[i].name, f->set.name) == 0;
-	}
-	if (!listed)
-		obs_property_list_add_string(set_sel, f->set.name, f->set.name);
-	obs_property_set_modified_callback2(set_sel, on_set_selected, f);
 	const bool dirty = set_is_dirty(&f->set);
 	obs_properties_add_button2(gset, "set.new", obs_module_text("New"), btn_set_action, f);
 	obs_properties_add_button2(gset, "set.dup", obs_module_text("Duplicate"), btn_set_action, f);
@@ -1048,7 +1115,6 @@ static obs_properties_t *palette_lock_properties(void *data)
 	b0 = obs_properties_add_button2(gset, "set.del", obs_module_text("Delete"), btn_set_action, f);
 	obs_property_set_enabled(b0, n_sets + (listed ? 0 : 1) > 1);
 	obs_properties_add_button2(gset, "set.save", obs_module_text("Save"), btn_set_action, f);
-	obs_properties_add_button2(gset, "set.load", obs_module_text("LoadFile"), btn_set_action, f);
 	obs_properties_add_text(gset, "synesthesia_playlist", obs_module_text("SynesthesiaPlaylist"), OBS_TEXT_DEFAULT);
 	char set_path[600];
 	char shown[700];
@@ -1057,7 +1123,7 @@ static obs_properties_t *palette_lock_properties(void *data)
 	snprintf(shown, sizeof(shown), "%s%s", set_path, dirty ? "  - unsaved changes" : "");
 	obs_property_t *pinfo = obs_properties_add_text(gset, "set.path", shown, OBS_TEXT_INFO);
 	obs_property_text_set_info_type(pinfo, dirty ? OBS_TEXT_INFO_WARNING : OBS_TEXT_INFO_NORMAL);
-	obs_properties_add_group(props, "performance_set", obs_module_text("PerformanceSet"), OBS_GROUP_NORMAL, gset);
+	obs_properties_add_group(gadv, "performance_set", obs_module_text("PerformanceSet"), OBS_GROUP_NORMAL, gset);
 
 	/* ---- Palettes ---- */
 	obs_properties_t *gpal = obs_properties_create();
@@ -1067,8 +1133,8 @@ static obs_properties_t *palette_lock_properties(void *data)
 	for (int i = 0; i < f->set.n_palettes; i++) {
 		char label[PL_NAME_MAX + 96];
 		const char *mode = f->set.palettes[i].mode == PL_MODE_DUOTONE ? "duo" : "grad";
-		snprintf(label, sizeof(label), "%s %d. %s · %s%s", (i == live) ? "●" : " ", i + 1,
-			 f->set.palettes[i].name, mode, i == bd_idx ? " · breakdown" : "");
+		snprintf(label, sizeof(label), "%s %d. %s - %s%s", (i == live) ? "[LIVE]" : "", i + 1,
+			 f->set.palettes[i].name, mode, i == bd_idx ? " - breakdown" : "");
 		obs_property_list_add_int(list, label, i);
 	}
 	obs_property_set_modified_callback2(list, on_edit_changed, f);
@@ -1096,36 +1162,36 @@ static obs_properties_t *palette_lock_properties(void *data)
 
 		char btn[32];
 		snprintf(btn, sizeof(btn), "sw.%d.%d.up", edit, j);
-		obs_properties_add_button2(gpal, btn, "▲", btn_colour_action, f);
+		obs_properties_add_button2(gpal, btn, "Up", btn_colour_action, f);
 		snprintf(btn, sizeof(btn), "sw.%d.%d.dn", edit, j);
-		obs_properties_add_button2(gpal, btn, "▼", btn_colour_action, f);
+		obs_properties_add_button2(gpal, btn, "Down", btn_colour_action, f);
 		snprintf(btn, sizeof(btn), "sw.%d.%d.rm", edit, j);
-		obs_properties_add_button2(gpal, btn, "✕", btn_colour_action, f);
+		obs_properties_add_button2(gpal, btn, "Remove", btn_colour_action, f);
 	}
 
 	obs_property_t *b;
-	b = obs_properties_add_button2(gpal, "colour.add", "＋ Add colour", btn_colour_action, f);
+	b = obs_properties_add_button2(gpal, "colour.add", "+ Add colour", btn_colour_action, f);
 	obs_property_set_enabled(b, ep->n_colours < PL_MAX_COLOURS);
-	obs_properties_add_button2(gpal, "colour.sort", "Sort dark → bright", btn_colour_action, f);
+	obs_properties_add_button2(gpal, "colour.sort", "Sort dark -> bright", btn_colour_action, f);
 	obs_properties_add_button2(gpal, "colour.rev", "Reverse", btn_colour_action, f);
 
-	b = obs_properties_add_button2(gpal, "palette.live", "▶ Go live", btn_palette_action, f);
+	b = obs_properties_add_button2(gpal, "palette.live", "Go live", btn_palette_action, f);
 	obs_property_set_enabled(b, edit != live);
-	obs_properties_add_button2(gpal, "palette.up", "▲ Move up", btn_palette_action, f);
-	obs_properties_add_button2(gpal, "palette.dn", "▼ Move down", btn_palette_action, f);
-	b = obs_properties_add_button2(gpal, "palette.add", "＋ New palette", btn_palette_action, f);
+	obs_properties_add_button2(gpal, "palette.up", "Move up", btn_palette_action, f);
+	obs_properties_add_button2(gpal, "palette.dn", "Move down", btn_palette_action, f);
+	b = obs_properties_add_button2(gpal, "palette.add", "+ New palette", btn_palette_action, f);
 	obs_property_set_enabled(b, f->set.n_palettes < PL_MAX_PALETTES);
 	b = obs_properties_add_button2(gpal, "palette.dup", "Duplicate", btn_palette_action, f);
 	obs_property_set_enabled(b, f->set.n_palettes < PL_MAX_PALETTES);
 	b = obs_properties_add_button2(gpal, "palette.del", "Delete", btn_palette_action, f);
 	obs_property_set_enabled(b, f->set.n_palettes > 1);
 
-	obs_properties_add_group(props, "palettes", obs_module_text("Palettes"), OBS_GROUP_NORMAL, gpal);
+	obs_properties_add_group(gadv, "palettes", obs_module_text("Palettes"), OBS_GROUP_NORMAL, gpal);
 
 	/* ---- Look (v1 amendments) ---- */
 	obs_properties_t *gcol = obs_properties_create();
-	add_look_properties(gcol);
-	obs_properties_add_group(props, "colour", obs_module_text("Look"), OBS_GROUP_NORMAL, gcol);
+	add_look_properties(gcol, false);
+	obs_properties_add_group(gadv, "colour", obs_module_text("Look"), OBS_GROUP_NORMAL, gcol);
 
 	/* ---- Palette changes ---- */
 	obs_properties_t *gchg = obs_properties_create();
@@ -1152,45 +1218,54 @@ static obs_properties_t *palette_lock_properties(void *data)
 	obs_property_list_add_string(bdl, obs_module_text("None"), "");
 	for (int i = 0; i < f->set.n_palettes; i++)
 		obs_property_list_add_string(bdl, f->set.palettes[i].name, f->set.palettes[i].name);
-	obs_properties_add_group(props, "palette_changes", obs_module_text("PaletteChanges"), OBS_GROUP_NORMAL, gchg);
+	obs_properties_add_group(gadv, "palette_changes", obs_module_text("PaletteChanges"), OBS_GROUP_NORMAL, gchg);
 
 	/* ---- Director ---- */
 	obs_properties_t *gdir = obs_properties_create();
 	obs_properties_add_bool(gdir, "dir_enabled", obs_module_text("Enabled"));
-	obs_property_t *aud = obs_properties_add_list(gdir, "audio_source", obs_module_text("AudioSource"),
-						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(aud, obs_module_text("AudioSource.None"), "");
-	obs_enum_sources(enum_audio_list, aud);
 	obs_properties_add_int(gdir, "fallback_bpm", obs_module_text("FallbackBpm"), 60, 200, 1);
 	obs_property_t *phr = obs_properties_add_list(gdir, "phrase_beats", obs_module_text("PhraseLength"),
 						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(phr, "16 beats", 16);
 	obs_property_list_add_int(phr, "32 beats", 32);
 	obs_properties_add_float_slider(gdir, "lock_fade_beats", obs_module_text("LockFade"), 0.25, 8.0, 0.25);
-	obs_properties_add_group(props, "director", obs_module_text("Director"), OBS_GROUP_NORMAL, gdir);
+	obs_properties_add_group(gadv, "director", obs_module_text("Director"), OBS_GROUP_NORMAL, gdir);
 
 	/* ---- Lock behaviours ---- */
 	obs_properties_t *gbeh = obs_properties_create();
-	obs_properties_add_bool(gbeh, "random_off", obs_module_text("RandomOff"));
-	obs_properties_add_float_slider(gbeh, "random_chance", obs_module_text("ChancePerPhrase"), 0.0, 1.0, 0.01);
-	obs_properties_add_int_slider(gbeh, "bars_min", obs_module_text("BarsOffMin"), 1, 8, 1);
-	obs_properties_add_int_slider(gbeh, "bars_max", obs_module_text("BarsOffMax"), 1, 16, 1);
-	obs_properties_add_int_slider(gbeh, "cooldown_phrases", obs_module_text("Cooldown"), 0, 8, 1);
+	obs_property_t *pro = obs_properties_add_bool(gbeh, "random_off", obs_module_text("RandomOff"));
+	obs_property_set_modified_callback2(pro, on_behaviour_changed, f);
+	b0 = obs_properties_add_float_slider(gbeh, "random_chance", obs_module_text("ChancePerPhrase"), 0.0, 1.0, 0.01);
+	obs_property_set_visible(b0, f->set.random_off);
+	b0 = obs_properties_add_int_slider(gbeh, "bars_min", obs_module_text("BarsOffMin"), 1, 8, 1);
+	obs_property_set_visible(b0, f->set.random_off);
+	b0 = obs_properties_add_int_slider(gbeh, "bars_max", obs_module_text("BarsOffMax"), 1, 16, 1);
+	obs_property_set_visible(b0, f->set.random_off);
+	b0 = obs_properties_add_int_slider(gbeh, "cooldown_phrases", obs_module_text("Cooldown"), 0, 8, 1);
+	obs_property_set_visible(b0, f->set.random_off);
 	obs_properties_add_bool(gbeh, "off_on_breakdown", obs_module_text("OffOnBreakdown"));
-	obs_properties_add_bool(gbeh, "off_on_drop", obs_module_text("OffOnDrop"));
-	obs_properties_add_int_slider(gbeh, "drop_bars", obs_module_text("RawBarsAtDrop"), 1, 8, 1);
+	obs_property_t *pod = obs_properties_add_bool(gbeh, "off_on_drop", obs_module_text("OffOnDrop"));
+	obs_property_set_modified_callback2(pod, on_behaviour_changed, f);
+	b0 = obs_properties_add_int_slider(gbeh, "drop_bars", obs_module_text("RawBarsAtDrop"), 1, 8, 1);
+	obs_property_set_visible(b0, f->set.off_on_drop);
 	obs_properties_add_float_slider(gbeh, "breathing", obs_module_text("Breathing"), 0.0, 1.0, 0.01);
 	obs_properties_add_bool(gbeh, "rotation", obs_module_text("Rotation"));
 	obs_properties_add_int(gbeh, "seed", obs_module_text("Seed"), 0, 99999, 1);
 	obs_properties_add_button2(gbeh, "seed.reroll", obs_module_text("Reroll"), btn_reroll, f);
-	obs_properties_add_group(props, "lock_behaviours", obs_module_text("LockBehaviours"), OBS_GROUP_NORMAL, gbeh);
+	obs_properties_add_group(gadv, "lock_behaviours", obs_module_text("LockBehaviours"), OBS_GROUP_NORMAL, gbeh);
 
 	/* ---- Hotkeys (read-only listing; bindings live in Settings > Hotkeys) ---- */
 	obs_properties_t *ghk = obs_properties_create();
 	obs_property_t *info =
 		obs_properties_add_text(ghk, "hotkeys.info", obs_module_text("HotkeysInfo"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(info, OBS_TEXT_INFO_NORMAL);
-	obs_properties_add_group(props, "hotkeys", obs_module_text("Hotkeys"), OBS_GROUP_NORMAL, ghk);
+	obs_properties_add_group(gadv, "hotkeys", obs_module_text("Hotkeys"), OBS_GROUP_NORMAL, ghk);
+
+	obs_property_t *gp =
+		obs_properties_add_group(props, "advanced", obs_module_text("Advanced"), OBS_GROUP_NORMAL, gadv);
+	obs_data_t *cur = obs_source_get_settings(f->context);
+	obs_property_set_visible(gp, obs_data_get_bool(cur, "show_advanced"));
+	obs_data_release(cur);
 
 	return props;
 }
@@ -1216,4 +1291,97 @@ static struct obs_source_info palette_lock_filter_info = {
 void palette_lock_filter_load(void)
 {
 	obs_register_source(&palette_lock_filter_info);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Palette Director dock API (UI thread)                                      */
+
+static struct palette_lock_filter *as_filter(obs_source_t *src)
+{
+	if (!src || strcmp(obs_source_get_unversioned_id(src), palette_lock_filter_info.id) != 0)
+		return NULL;
+	return obs_obj_get_data(src);
+}
+
+bool palette_lock_read_set(obs_source_t *src, struct pl_set *out, int *edit, int *live)
+{
+	struct palette_lock_filter *f = as_filter(src);
+	if (!f)
+		return false;
+	/* read from the settings (the source of truth the update callback applies), not f->set,
+	 * which the video thread may be rewriting */
+	obs_data_t *s = obs_source_get_settings(src);
+	set_from_settings(s, out);
+	if (edit) {
+		int e = (int)obs_data_get_int(s, "edit_palette");
+		*edit = (e >= 0 && e < out->n_palettes) ? e : 0;
+	}
+	if (live) {
+		int l = pd_host_live_palette(f->host);
+		if (l < 0 || l >= out->n_palettes)
+			l = (int)obs_data_get_int(s, "live_palette");
+		*live = (l >= 0 && l < out->n_palettes) ? l : 0;
+	}
+	obs_data_release(s);
+	return true;
+}
+
+bool palette_lock_commit(obs_source_t *src, const struct pl_set *ns, int force_live, const char *why)
+{
+	struct palette_lock_filter *f = as_filter(src);
+	if (!f)
+		return false;
+	obs_data_t *s = obs_source_get_settings(src);
+	int edit = (int)obs_data_get_int(s, "edit_palette");
+	obs_data_release(s);
+	if (edit < 0 || edit >= ns->n_palettes)
+		edit = 0;
+	if (why && why[0])
+		blog(LOG_INFO, "[palette-lock] '%s': dock edit: %s", obs_source_get_name(src), why);
+	commit_set(f, ns, force_live, edit);
+	return true;
+}
+
+bool palette_lock_set_audio(obs_source_t *src, const char *name)
+{
+	if (!as_filter(src))
+		return false;
+	obs_data_t *s = obs_source_get_settings(src);
+	obs_data_set_string(s, "audio_source", name ? name : "");
+	blog(LOG_INFO, "[palette-lock] '%s': dock edit: audio source -> '%s'", obs_source_get_name(src),
+	     name ? name : "");
+	obs_source_update(src, s);
+	obs_data_release(s);
+	return true;
+}
+
+const char *palette_lock_audio(obs_source_t *src)
+{
+	obs_data_t *s = obs_source_get_settings(src);
+	char *out = bstrdup(obs_data_get_string(s, "audio_source"));
+	obs_data_release(s);
+	return out;
+}
+
+bool palette_lock_set_action(obs_source_t *src, const char *action)
+{
+	struct palette_lock_filter *f = as_filter(src);
+	return f && action && set_action_impl(f, action);
+}
+
+bool palette_lock_select_set(obs_source_t *src, const char *name)
+{
+	struct palette_lock_filter *f = as_filter(src);
+	if (!f || !name || !name[0] || strcmp(name, f->set.name) == 0)
+		return false;
+	if (!confirm_discard(f))
+		return false;
+	struct pl_set ns;
+	char err[256] = {0};
+	if (!pd_sets_load_name(name, &ns, err, sizeof(err))) {
+		pd_ui_message(obs_module_text("PaletteDirector"), err);
+		return false;
+	}
+	apply_set(f, &ns, "loaded (dock)");
+	return true;
 }

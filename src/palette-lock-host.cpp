@@ -734,4 +734,22 @@ bool command(uint64_t id, int cmd, int idx)
 	return true;
 }
 
+obs_source_t *filter_source(uint64_t id)
+{
+	std::lock_guard<std::mutex> g(g_reg_mx);
+	auto it = g_reg.find(id);
+	if (it == g_reg.end())
+		return nullptr;
+	return obs_source_get_ref(it->second->filter);
+}
+
+uint64_t id_for_filter(obs_source_t *filter)
+{
+	std::lock_guard<std::mutex> g(g_reg_mx);
+	for (const auto &kv : g_reg)
+		if (kv.second->filter == filter)
+			return kv.first;
+	return 0;
+}
+
 } // namespace pdhost

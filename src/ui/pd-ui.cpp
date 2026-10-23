@@ -37,7 +37,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 Sandbox test hook: PD_UI_AUTO (env) makes the helpers non-interactive. Each helper takes the
 next '|' separated answer from PD_UI_AUTO_ANSWERS (env) or from pd_ui_set_answers():
 "y"/"n" for confirms, text for prompts, a path for the file picker, "-" = cancel.
-Every auto answer is logged. Unset in normal use.
+Every auto answer is logged. Compiled only with -DPD_TEST_HOOKS=ON (never in release builds).
 */
 namespace {
 std::string g_answers;
@@ -45,14 +45,22 @@ bool g_answers_init = false;
 
 bool auto_mode()
 {
+#if defined(PD_TEST_HOOKS)
 	const char *e = getenv("PD_UI_AUTO");
 	return e && *e == '1';
+#else
+	return false; /* release builds: the hook is compiled out */
+#endif
 }
 
 bool next_answer(std::string &out)
 {
 	if (!g_answers_init) {
+#if defined(PD_TEST_HOOKS)
 		const char *e = getenv("PD_UI_AUTO_ANSWERS");
+#else
+		const char *e = nullptr;
+#endif
 		g_answers = e ? e : "";
 		g_answers_init = true;
 	}

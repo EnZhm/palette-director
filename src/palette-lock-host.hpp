@@ -26,6 +26,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <string>
 #include <vector>
 
+#include <obs.h>
+
 #include "director/director.h"
 #include "palette/palette.h"
 
@@ -66,5 +68,9 @@ std::vector<InstanceInfo> list_instances();
 // fills `out`; false if the instance no longer exists
 bool read_view(uint64_t id, DockView &out, uint64_t log_since);
 bool command(uint64_t id, int cmd, int idx);
+// strong reference to the filter source of an instance (obs_source_release it), or nullptr
+obs_source_t *filter_source(uint64_t id);
+// instance id of a filter source, 0 if it is not a registered Palette Lock filter
+uint64_t id_for_filter(obs_source_t *filter);
 
 } // namespace pdhost

@@ -6,6 +6,7 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
+option(PD_TEST_HOOKS "Compile the sandbox test hooks (dock test cycle, UI auto answers); never in releases" OFF)
 
 include(compilerconfig)
 include(defaults)
@@ -65,6 +66,11 @@ endif()
 
 if(ENABLE_QT)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ENABLE_QT)
+endif()
+
+if(PD_TEST_HOOKS)
+  message(WARNING "PD_TEST_HOOKS is ON: sandbox test hooks are compiled in (do not ship this build)")
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PD_TEST_HOOKS)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

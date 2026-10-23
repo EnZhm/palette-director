@@ -163,7 +163,7 @@ const char *cmd_name(int c)
 	case PD_CMD_ROTATE_NOW:
 		return "rotate colours now";
 	case PD_CMD_PANIC:
-		return "PANIC";
+		return "PANIC (toggle)";
 	case PD_CMD_TOGGLE_PAUSE:
 		return "pause/resume";
 	}
@@ -585,7 +585,8 @@ static void worker_main(pd_host *h)
 			     "[palette-director] '%s': status bpm %.1f conf %.2f %s beat %llu phrase %llu live '%s' mix %.2f%s%s%s",
 			     obs_source_get_name(h->filter), st.bpm, st.confidence, section_name(st.section),
 			     (unsigned long long)st.beat, (unsigned long long)st.phrase, lname, mix,
-			     st.silent ? " (silent: fallback bpm)" : "", st.paused ? " PAUSED" : "",
+			     st.silent ? " (silent: fallback bpm)" : "",
+			     st.panic ? " PANIC" : (st.paused ? " PAUSED" : ""),
 			     h->audio_weak ? "" : " (no audio source)");
 		}
 	}

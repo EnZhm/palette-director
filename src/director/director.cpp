@@ -199,6 +199,7 @@ struct Director::Impl {
 		st.beat_frac = static_cast<float>(bf - std::floor(bf));
 		st.next_palette = scheduler_.peek_next();
 		st.paused = scheduler_.paused();
+		st.panic = scheduler_.panic();
 		st.forced_on = scheduler_.forced_on();
 		st.force_off = scheduler_.force_off();
 		st.enabled = set_.director.enabled;

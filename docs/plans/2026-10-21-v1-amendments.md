@@ -95,3 +95,26 @@ scenes, which is what was asked for. A hue-aware mode is not part of v1.
 The sandbox test hooks (`PD_DOCK_TEST_CYCLE`, `PD_DOCK_SNAPSHOT_DIR`, `PD_UI_AUTO`) are compiled only
 with the CMake option `PD_TEST_HOOKS=ON` (default OFF). Release builds do not contain them (verified
 by a string search of the release DLL).
+
+## v1.0.1
+
+Changes after the v1.0.0 release, from Ian's first sessions on the VJ laptop.
+
+### 9. PANIC is a toggle (deviation from the spec's one-way latch)
+
+The spec made PANIC a one-way latch: lock on, director paused, palette held, rotation reset, and only
+Pause/Resume got you out. On the laptop Ian could not find the way out ("the panic lock is stuck on"),
+and a Force on pressed while panicked stayed on even after Resume.
+
+- PANIC (dock button, hotkey F17) is now a toggle. The first press does what it did before. The second
+  press releases it: the director resumes, Force on and Force off are cleared, and the log says
+  "PANIC released: director resumed".
+- Resume (F15 or the dock's Resume) while panicked also releases PANIC fully, including Force on.
+- Panic is its own state (`Scheduler::panic_`, `DirectorState::panic`), separate from a plain Pause.
+  While it is latched the lock is held on whatever Force on/off say.
+- Dock: the PANIC button is checkable and filled red while active ("PANIC active - press to release"),
+  the state chip reads PANIC, and the now line says "PANIC: lock held on, director paused (press PANIC
+  or Resume to release)". Force on shows its checked state, and the now line says when Force on is
+  holding the lock.
+- A drop that happens while panicked does not change the palette (the director is paused); after the
+  release the held palette stays until the next automatic change.

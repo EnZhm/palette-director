@@ -57,6 +57,7 @@ public:
 	double mix_target(uint64_t beat) const;
 	bool lock_on(uint64_t beat) const { return mix_target(beat) >= 0.5f; }
 	bool paused() const { return paused_; }
+	bool panic() const { return panic_; }
 
 	int live_palette() const { return live_; }
 	int prev_palette() const { return prev_; }
@@ -68,6 +69,7 @@ private:
 	std::vector<int> normal_idx() const;
 	int pick_next(int dir);
 	std::vector<Event> go_live(int i, const std::string &why, uint64_t beat);
+	void release_panic();
 
 	SchedulerConfig cfg_;
 	Mulberry32 rng_;
@@ -84,6 +86,7 @@ private:
 	int64_t off_until_ = -1;
 	std::string off_reason_;
 	bool paused_ = false;
+	bool panic_ = false; // PANIC latch (v1.0.1: a toggle; PANIC again or Resume releases it)
 	bool force_off_ = false;
 	bool forced_on_ = false;
 };

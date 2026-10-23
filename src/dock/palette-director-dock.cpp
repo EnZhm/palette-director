@@ -550,8 +550,11 @@ protected:
 		ctrls->addWidget(bRotate, 1, 2);
 		lv->addLayout(ctrls);
 		bPanic = new QPushButton(T("Dock.Panic"), live_area);
-		bPanic->setStyleSheet(
-			"QPushButton{border:2px solid rgba(255,70,100,220);padding:8px;font-weight:700;}");
+		/* v1.0.1: PANIC is a toggle and shows its live state; the red outline fills while active */
+		bPanic->setCheckable(true);
+		bPanic->setStyleSheet("QPushButton{border:2px solid rgba(255,70,100,220);padding:8px;font-weight:700;}"
+				      "QPushButton:checked{background:rgba(255,60,90,200);color:white;}");
+		bForceOn->setStyleSheet("QPushButton:checked{background:rgba(80,140,255,170);font-weight:700;}");
 		lv->addWidget(bPanic);
 
 		QObject::connect(bForceOff, &QPushButton::pressed, this, [this] { send(PD_CMD_FORCE_OFF); });
@@ -1751,6 +1754,8 @@ private:
 
 	QString next_text(const pd::DirectorState &st, const struct pl_set &set) const
 	{
+		if (st.panic)
+			return T("Dock.NowPanic");
 		if (!st.enabled)
 			return T("Dock.NowDirectorOff");
 		if (st.paused)
@@ -1811,7 +1816,10 @@ private:
 			state = "DIRECTOR PAUSED";
 			stc = QColor(255, 170, 40);
 		}
-		if (st.force_off) {
+		if (st.panic) {
+			state = "PANIC";
+			stc = QColor(255, 60, 100);
+		} else if (st.force_off) {
 			state = "FORCED OFF";
 			stc = QColor(255, 60, 100);
 		} else if (st.forced_on) {
@@ -1843,8 +1851,11 @@ private:
 						       view.audio_attached ? QString() : QString(" (not found)"), kDot)
 						  .arg(st.cooldown_phrases_left));
 		bForceOn->setChecked(st.forced_on);
+		bForceOn->setText(st.forced_on ? T("Dock.ForceOnActive") : T("Dock.ForceOn"));
 		bPause->setChecked(st.paused);
 		bPause->setText(st.paused ? T("Dock.Resume") : T("Dock.Pause"));
+		bPanic->setChecked(st.panic);
+		bPanic->setText(st.panic ? T("Dock.PanicActive") : T("Dock.Panic"));
 
 		/* pads: flow grid of up to 16, 2..4 columns by width */
 		const int cols = std::clamp(live_area->width() / 150, 2, 4);
@@ -1884,8 +1895,12 @@ private:
 						 ? QString::fromUtf8(set.palettes[st.live_palette].name)
 						 : QString("?");
 		QString lockWord = mix > 0.99f ? "lock ON" : (mix < 0.01f ? "lock OFF (raw source)" : "lock fading");
-		if (st.force_off)
+		if (st.panic)
+			lockWord = "lock held ON by PANIC";
+		else if (st.force_off)
 			lockWord = "lock forced OFF";
+		else if (st.forced_on)
+			lockWord = "lock held ON by Force on (press Force on to release)";
 		nowLbl->setText(QString("Live: %1 %2 %3 %2 %4%5")
 					.arg(liveName, kDot, next_text(st, set), lockWord,
 					     is_dirty ? QString(" %1 set has unsaved changes").arg(kDot) : QString()));

@@ -77,6 +77,7 @@ struct DirectorState {
 	float beat_frac = 0.0f; // fractional part of the beat clock (beat lights)
 	int next_palette = -1;  // pickNextPreview: next palette the scheduler would pick, -1 if none
 	bool paused = false;    // director paused (Pause / Panic)
+	bool panic = false;     // PANIC latched (v1.0.1 toggle); implies paused + lock held on
 	bool forced_on = false; // Force on toggle
 	bool force_off = false; // Force off (hold)
 	bool enabled = true;    // DirectorConfig::enabled

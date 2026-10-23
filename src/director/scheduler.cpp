@@ -22,6 +22,7 @@ void Scheduler::reset(const SchedulerConfig &cfg)
 	off_until_ = -1;
 	off_reason_.clear();
 	paused_ = false;
+	panic_ = false;
 	force_off_ = false;
 	forced_on_ = false;
 }
@@ -353,8 +354,13 @@ std::vector<Event> Scheduler::command(Command cmd, int palette_index, uint64_t b
 		log("director paused (lock and palette held)");
 		break;
 	case Command::Resume:
-		paused_ = false;
-		log("director resumed");
+		if (panic_) {
+			release_panic();
+			log("PANIC released: director resumed");
+		} else {
+			paused_ = false;
+			log("director resumed");
+		}
 		break;
 	case Command::Next: {
 		auto evs = go_live(pick_next(1), "manual next", beat);
@@ -384,6 +390,13 @@ std::vector<Event> Scheduler::command(Command cmd, int palette_index, uint64_t b
 		break;
 	}
 	case Command::Panic:
+		/* v1.0.1: PANIC is a toggle. The second press releases it (resume, clear force on/off). */
+		if (panic_) {
+			release_panic();
+			log("PANIC released: director resumed");
+			break;
+		}
+		panic_ = true;
 		paused_ = true;
 		force_off_ = false;
 		off_until_ = -1;
@@ -397,6 +410,14 @@ std::vector<Event> Scheduler::command(Command cmd, int palette_index, uint64_t b
 	return out;
 }
 
+void Scheduler::release_panic()
+{
+	panic_ = false;
+	paused_ = false;
+	forced_on_ = false;
+	force_off_ = false;
+}
+
 void Scheduler::advance_pfade(double dt, double bpm)
 {
 	if (pfade_ < 1.0f) {
@@ -407,6 +428,8 @@ void Scheduler::advance_pfade(double dt, double bpm)
 
 double Scheduler::mix_target(uint64_t beat) const
 {
+	if (panic_)
+		return 1.0; // PANIC holds the lock on, whatever force on/off say
 	double t = 1.0;
 	if (cfg_.enabled && !paused_ && off_until_ > static_cast<int64_t>(beat))
 		t = 0.0;

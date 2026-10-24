@@ -33,27 +33,19 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	REQUIRE_MESSAGE(pd_set_parse(src.c_str(), &s, err, sizeof(err)), err);
 	CHECK(std::string(s.name) == "Techno Apocalypse");
 	CHECK(std::string(s.synesthesia_playlist) == "Techno Apocalypse");
-	/* v1 amendments: the 7 original palettes unchanged, then 6 duotones + 3 gradient maps */
-	REQUIRE(s.n_palettes == 16);
-	const char *names[16] = {"Neon Grid",        "Toxic Rain",         "Fallout Amber",
-				 "Synth Violet",     "Ice Circuit",        "Red Alert",
-				 "Spectrum Fallout", "Blacklight",         "Acid Rain",
-				 "Thermal",          "Cold Steel",         "Nuclear Dawn",
-				 "Bruise",           "Sodium Streetlight", "Chernobyl Glow",
-				 "Ultraviolet Riot"};
-	for (int i = 0; i < 16; i++) {
-		INFO("palette " << i);
-		CHECK(std::string(s.palettes[i].name) == names[i]);
-		CHECK(s.palettes[i].mode == ((i >= 7 && i <= 12) ? PL_MODE_DUOTONE : PL_MODE_GRADIENT));
-		CHECK(s.palettes[i].n_colours == (i == 6 ? 8 : (i <= 5 ? 5 : (i <= 12 ? 2 : 4))));
+	/* Data-driven on purpose: the palettes array is owned by kalessin (TechnoCore) and may be
+	 * swapped without touching code. Check the structural rules every palette must satisfy, not
+	 * the names or colours. The settings below are pinned. */
+	REQUIRE(s.n_palettes >= 1);
+	REQUIRE(s.n_palettes <= PL_MAX_PALETTES);
+	for (int i = 0; i < s.n_palettes; i++) {
+		INFO("palette " << i << " '" << s.palettes[i].name << "'");
+		CHECK(s.palettes[i].name[0] != '\0');
+		CHECK(pl_name_unique(&s, s.palettes[i].name, i));
+		CHECK((s.palettes[i].mode == PL_MODE_DUOTONE || s.palettes[i].mode == PL_MODE_GRADIENT));
+		CHECK(s.palettes[i].n_colours >= 2);
+		CHECK(s.palettes[i].n_colours <= PL_MAX_COLOURS);
 	}
-	char hex[PL_HEX_LEN];
-	pl_colour_to_hex(s.palettes[0].colours[2], hex);
-	CHECK(std::string(hex) == "#FF00A0");
-	pl_colour_to_hex(s.palettes[7].colours[1], hex);
-	CHECK(std::string(hex) == "#FF00A0");
-	pl_colour_to_hex(s.palettes[15].colours[3], hex);
-	CHECK(std::string(hex) == "#C800FF");
 	CHECK(s.strength == doctest::Approx(1.0f));
 	CHECK(s.contrast == doctest::Approx(1.2f));
 	CHECK(s.preserve == doctest::Approx(0.0f));
@@ -65,7 +57,7 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	CHECK(s.order == PL_ORDER_SHUFFLE);
 	CHECK(s.crossfade_beats == doctest::Approx(1.0f));
 	CHECK(std::string(s.breakdown) == "Spectrum Fallout");
-	CHECK(pl_breakdown_index(&s) == 6); // resolved BY NAME
+	CHECK(pl_breakdown_index(&s) >= 0); // resolved BY NAME, wherever it sits in the list
 	CHECK(s.fallback_bpm == doctest::Approx(132.0f));
 	CHECK(s.random_off == true);
 	CHECK(s.random_chance == doctest::Approx(0.12f));
@@ -78,6 +70,14 @@ TEST_CASE("bundled Techno Apocalypse loads with every palette, mode and setting"
 	CHECK(s.breathing == doctest::Approx(0.0f));
 	CHECK(s.rotation == false);
 	CHECK(s.seed == 2077u);
+	/* v1.0.1 audio keys */
+	CHECK(s.input_gain_db == doctest::Approx(0.0f));
+	CHECK(s.kick_sensitivity == doctest::Approx(0.6f));
+	/* v1.0.1 drop colour cycle: on, 50%, 1 bar, 1/8 */
+	CHECK(s.drop_cycle == true);
+	CHECK(s.drop_cycle_chance == doctest::Approx(0.5f));
+	CHECK(s.drop_cycle_bars == 1);
+	CHECK(s.drop_cycle_steps_per_beat == 2);
 }
 
 TEST_CASE("load -> save round-trips the bundled preset byte for byte")
@@ -236,4 +236,65 @@ TEST_CASE("set file names follow the mock's slug rule")
 	CHECK(std::string(out) == "AB-test-set");
 	pd_set_slug("///", out, sizeof(out));
 	CHECK(std::string(out) == "set");
+}
+
+TEST_CASE("v1.0.1 audio keys are optional on load (v1.0.0 files keep today's behaviour) and round-trip")
+{
+	std::string src = slurp(kBundled);
+	const auto a = src.find(",\n    \"input_gain_db\""); // strip every v1.0.1 director key
+	REQUIRE(a != std::string::npos);
+	const auto b = src.find("\n  }\n}", a);
+	std::string old = src.substr(0, a) + src.substr(b); // a v1.0.0-style file
+	struct pl_set s;
+	char err[256] = {0};
+	REQUIRE_MESSAGE(pd_set_parse(old.c_str(), &s, err, sizeof(err)), err);
+	CHECK(s.input_gain_db == doctest::Approx(0.0f));
+	CHECK(s.kick_sensitivity == doctest::Approx(0.6f));
+	s.input_gain_db = 7.5f;
+	s.kick_sensitivity = 0.85f;
+	char *out = pd_set_write(&s);
+	struct pl_set s2;
+	REQUIRE(pd_set_parse(out, &s2, err, sizeof(err)));
+	CHECK(s2.input_gain_db == doctest::Approx(7.5f));
+	CHECK(s2.kick_sensitivity == doctest::Approx(0.85f));
+	pd_set_free(out);
+	// out-of-range values are rejected with a reason, like every other key
+	std::string hot = src;
+	hot.replace(hot.find("\"input_gain_db\": 0"), 18, "\"input_gain_db\": 99");
+	CHECK_FALSE(pd_set_parse(hot.c_str(), &s2, err, sizeof(err)));
+	CHECK(std::string(err).find("input_gain_db") != std::string::npos);
+}
+
+TEST_CASE("v1.0.1 drop_cycle keys: missing = disabled, every rate round-trips, bad rate rejected")
+{
+	const std::string src = slurp(kBundled);
+	const auto a = src.find(",\n    \"drop_cycle\"");
+	REQUIRE(a != std::string::npos);
+	const auto b = src.find("\n  }\n}", a);
+	const std::string old = src.substr(0, a) + src.substr(b);
+	struct pl_set s;
+	char err[256] = {0};
+	REQUIRE_MESSAGE(pd_set_parse(old.c_str(), &s, err, sizeof(err)), err);
+	CHECK(s.drop_cycle == false); // older files: exactly as before
+	for (int spb : {1, 2, 4}) {
+		s.drop_cycle = true;
+		s.drop_cycle_chance = 0.25f;
+		s.drop_cycle_bars = 3;
+		s.drop_cycle_steps_per_beat = spb;
+		char *out = pd_set_write(&s);
+		struct pl_set s2;
+		REQUIRE(pd_set_parse(out, &s2, err, sizeof(err)));
+		CHECK(s2.drop_cycle);
+		CHECK(s2.drop_cycle_chance == doctest::Approx(0.25f));
+		CHECK(s2.drop_cycle_bars == 3);
+		CHECK(s2.drop_cycle_steps_per_beat == spb);
+		char *out2 = pd_set_write(&s2);
+		CHECK(std::string(out) == std::string(out2));
+		pd_set_free(out);
+		pd_set_free(out2);
+	}
+	std::string bad = src;
+	bad.replace(bad.find("\"1/8\""), 5, "\"1/3\"");
+	CHECK_FALSE(pd_set_parse(bad.c_str(), &s, err, sizeof(err)));
+	CHECK(std::string(err).find("drop_cycle rate") != std::string::npos);
 }

@@ -1,5 +1,9 @@
-Palette Director 0.1.0 for OBS Studio 32.2.x (Windows x64)
+Palette Director 1.0.1 for OBS Studio 32.2.x (Windows x64)
 ==========================================================
+
+New in 1.0.1: PANIC is a toggle (press it again, or Resume, to release),
+an Input gain and a Kick sensitivity control, an audio meter in the
+panel (see sections 5 and 6), and the drop colour cycle (section 3).
 
 Palette Director locks a Synesthesia (Spout) VJ feed to a set of colour
 palettes inside OBS, and reacts to the music from your DJ mixer: palettes
@@ -19,7 +23,7 @@ It is set-and-forget: set it up once in the panel, then leave it running.
 1. Close OBS.
 2. If an older Palette Director is installed, delete the folder
      C:\ProgramData\obs-studio\plugins\palette-director
-3. Unzip palette-director-0.1.0-windows-x64.zip and copy the folder
+3. Unzip palette-director-1.0.1-windows-x64.zip and copy the folder
    "palette-director" into
      C:\ProgramData\obs-studio\plugins\
    so that these files exist:
@@ -28,7 +32,7 @@ It is set-and-forget: set it up once in the panel, then leave it running.
      C:\ProgramData\obs-studio\plugins\palette-director\data\locale\en-US.ini
      C:\ProgramData\obs-studio\plugins\palette-director\data\sets\techno-apocalypse.json
 4. Start OBS 32.2.x. Help > Log Files > View Current Log should show
-     [palette-director] plugin loaded successfully (version 0.1.0)
+     [palette-director] plugin loaded successfully (version 1.0.1)
    If it does not, check the folder layout above.
 
 
@@ -60,8 +64,13 @@ The top of the panel is always visible and shows what is happening:
   - Palette pads (up to 16): tap a pad to make it live. The live pad has
     a bright outline and a crossfade bar; the next pad has a dashed
     outline. Pads 1-8 show their Ctrl+N hotkey.
-  - Controls: Force off (hold), Force on, Pause director, Prev / Next
-    palette, Rotate colours, PANIC.
+  - Audio meter: LEVEL is the input in dBFS after Input gain (it shows
+    CLIP above -1 dBFS); BASS is the bass level with a red mark at the
+    kick threshold; the KICK light flashes on every kick the Director
+    hears. If the light does not follow the kick drum, see section 5.
+  - Controls: Force off (hold), Force on (lights up while it holds the
+    lock on), Pause director, Prev / Next palette, Rotate colours, PANIC
+    (fills red while active; press it again to release).
   - Timeline of the last 64 beats, and a one-line summary, for example
       Live: Neon Grid - next: Thermal on the next drop - lock ON
 
@@ -81,9 +90,20 @@ Below it, "Set-up" opens the tabs (the panel remembers if it is open):
   Changes   when palettes change (every drop, every N phrases, random,
             manual), order (list or shuffle), crossfade, breakdown palette.
   Director  enabled, audio source, fallback BPM, phrase length, lock
-            fade, and the lock behaviours (random off, off on breakdown,
+            fade, Input gain, Kick sensitivity, and the lock behaviours
+            (including the drop colour cycle) (random off, off on breakdown,
             off on drop, breathing, colour rotation, seed).
   Log       the Director's full decision log.
+
+Drop colour cycle (Director tab, lock behaviours): when the drop lands
+after a breakdown, the Director sometimes flashes through the palettes
+with hard cuts for a bar (Chance, Length 1-4 bars, Speed 1/4, 1/8 or
+1/16 of a beat), with the lock held on, then settles on the next palette.
+The panel shows a DROP CYCLE chip and the live pad flashes. PANIC, Pause,
+Force off or tapping a pad stops it at once. It also works when palettes
+change "Manual only". If "Off on drop" is on and the cycle runs, the
+cycle replaces the raw bars for that drop. The bundled Techno Apocalypse
+set has it on: 50%, 1 bar, 1/8.
 
 Every change you make in the panel is applied to the filter straight away
 and marks the set as changed; press Save on the Set tab to keep it in the
@@ -126,6 +146,18 @@ phrases, breakdowns and drops itself.
 4. With no audio source (or a silent feed) the Director runs at the
    Fallback BPM: the lock stays on, nothing changes on its own, and
    manual palette changes still work.
+5. The Director follows the level of the music: after a loud passage it
+   re-adjusts within about half a minute, and it starts fresh when you
+   pick another audio source.
+6. If drops are not detected, watch the meter in the panel:
+   - LEVEL below about -30 dBFS, or "no signal": raise Input gain
+     (Director tab, -12 to +24 dB). If it shows CLIP, lower it.
+   - The KICK light misses kicks: raise Kick sensitivity (default 60%).
+   - The KICK light keeps flashing in quiet breakdowns, so breakdowns
+     are missed: lower Kick sensitivity.
+   Kick sensitivity sets how hard a kick must hit compared with the
+   recent loudest bass: 0% = 85% of it, 60% = 40% (as in 1.0.0),
+   100% = 10%.
 
 
 6. Hotkeys
@@ -137,15 +169,16 @@ own set, labelled with the filter name in brackets. Defaults:
   Force on (toggle)                     F14
   Pause / resume director               F15
   Rotate colours now                    F16
-  PANIC (lock on, director paused)      F17
+  PANIC (toggle)                        F17
   Next palette                          F18
   Previous palette                      F19
   Palette 1-8 go live                   Ctrl+1 ... Ctrl+8
 
 Palettes 9-16 have no hotkeys: tap their pads in the panel, or use
 Next / Previous palette.
-PANIC holds the lock on with the live palette and pauses the Director;
-press Pause / resume (F15) to let it run again.
+PANIC holds the lock on with the live palette and pauses the Director.
+Press PANIC again (or Pause / resume, F15) to release it: the Director
+runs again and Force on / Force off are cleared.
 
 
 7. Uninstall

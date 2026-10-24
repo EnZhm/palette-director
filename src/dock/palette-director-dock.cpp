@@ -165,6 +165,7 @@ public:
 	struct pl_palette pal = {};
 	int index = 0;
 	bool live = false, next = false, breakdown = false;
+	bool flash = false; // v1.0.1 drop cycle: the live pad flashes with each cut
 	float pfade = 1.0f;
 	std::function<void(int)> on_tap;
 
@@ -185,6 +186,11 @@ protected:
 		QPainterPath bg;
 		bg.addRoundedRect(r, 7, 7);
 		p.fillPath(bg, pl.color(QPalette::Base));
+		if (live && flash) {
+			QColor fc = pl.color(QPalette::Highlight);
+			fc.setAlpha(110);
+			p.fillPath(bg, fc);
+		}
 		QPen pen(live ? hl : (next ? pl.color(QPalette::WindowText) : pl.color(QPalette::Mid)));
 		pen.setWidthF(live ? 3.0 : (next ? 1.5 : 1.0));
 		if (next && !live)
@@ -263,6 +269,66 @@ protected:
 			p.setBrush(i == on ? palette().color(QPalette::Highlight) : palette().color(QPalette::Mid));
 			p.drawEllipse(QRectF(i * 20 + 2, 1, 14, 14));
 		}
+	}
+};
+
+/* ---- v1.0.1 audio meter: input level (dBFS after gain, CLIP > -1 dBFS), bass bar with the kick
+ * threshold marked, kick light. Fed from the DockView snapshot (copied under the host's view mutex). */
+class AudioMeter : public QWidget {
+public:
+	explicit AudioMeter(QWidget *parent) : QWidget(parent)
+	{
+		setMinimumHeight(34);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	}
+	float db = -120.0f, bass = 0.0f, thr = 0.4f;
+	bool clip = false, silent = true;
+	int kick_flash = 0; // frames left to light the kick lamp
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter p(this);
+		p.setRenderHint(QPainter::Antialiasing);
+		const QPalette &pl = palette();
+		const double W = width(), lamp = 26.0, lbl = 46.0;
+		const double bw = std::max(40.0, W - lamp - lbl - 10.0);
+		QFont f = font();
+		f.setPointSizeF(std::max(6.0, f.pointSizeF() * 0.8));
+		f.setBold(true);
+		p.setFont(f);
+		p.setPen(pl.color(QPalette::PlaceholderText));
+		p.drawText(QRectF(0, 0, lbl, 15), Qt::AlignLeft | Qt::AlignVCenter, "LEVEL");
+		p.drawText(QRectF(0, 18, lbl, 15), Qt::AlignLeft | Qt::AlignVCenter, "BASS");
+		/* level: -60..0 dBFS */
+		const QRectF lr(lbl, 2, bw, 11);
+		p.fillRect(lr, pl.color(QPalette::Base));
+		const double lv = std::clamp((static_cast<double>(db) + 60.0) / 60.0, 0.0, 1.0);
+		const QColor lc = clip ? QColor(255, 60, 90)
+				       : (db > -6.0f ? QColor(255, 190, 40) : QColor(60, 200, 110));
+		p.fillRect(QRectF(lr.left(), lr.top(), lr.width() * lv, lr.height()), lc);
+		for (int t = -48; t < 0; t += 12) {
+			const double x = lr.left() + lr.width() * (t + 60.0) / 60.0;
+			p.fillRect(QRectF(x, lr.top(), 1, lr.height()), pl.color(QPalette::Mid));
+		}
+		p.setPen(pl.color(QPalette::Text));
+		p.drawText(lr.adjusted(4, -1, -4, 1), Qt::AlignRight | Qt::AlignVCenter,
+			   clip ? QString("CLIP %1 dBFS").arg(db, 0, 'f', 1)
+				: (db <= -119.0f ? QString("no signal") : QString("%1 dBFS").arg(db, 0, 'f', 1)));
+		/* bass bar with the kick threshold */
+		const QRectF br(lbl, 19, bw, 11);
+		p.fillRect(br, pl.color(QPalette::Base));
+		p.fillRect(QRectF(br.left(), br.top(), br.width() * std::clamp(bass, 0.0f, 1.0f), br.height()),
+			   pl.color(QPalette::Highlight));
+		const double tx = br.left() + br.width() * std::clamp(thr, 0.0f, 1.0f);
+		p.fillRect(QRectF(tx - 1, br.top() - 2, 2, br.height() + 4), QColor(255, 60, 90));
+		/* kick light */
+		const QRectF kr(W - lamp + 2, 4, lamp - 6, lamp - 6);
+		p.setPen(QPen(pl.color(QPalette::Mid), 1));
+		p.setBrush(kick_flash > 0 ? QColor(255, 60, 90) : pl.color(QPalette::Base));
+		p.drawEllipse(kr);
+		p.setPen(pl.color(QPalette::PlaceholderText));
+		p.drawText(QRectF(W - lamp - 4, 22, lamp + 4, 12), Qt::AlignCenter, "KICK");
 	}
 };
 
@@ -393,7 +459,7 @@ struct ValueSlider {
 		if (percent)
 			v->setText(QString("%1%").arg(s->value()));
 		else
-			v->setText(QString::number(s->value() / scale, 'f', 2));
+			v->setText(QString::number(s->value() / scale, 'f', scale <= 2.0 ? 1 : 2));
 	}
 };
 
@@ -510,6 +576,9 @@ protected:
 		sAudio = new QLabel(live_area);
 		sAudio->setForegroundRole(QPalette::PlaceholderText);
 		lv->addWidget(sAudio);
+		meter = new AudioMeter(live_area);
+		meter->setToolTip(T("Dock.MeterHelp"));
+		lv->addWidget(meter);
 
 		/* pads */
 		auto *ph = new QLabel(T("Dock.PalettesTap"), live_area);
@@ -550,8 +619,11 @@ protected:
 		ctrls->addWidget(bRotate, 1, 2);
 		lv->addLayout(ctrls);
 		bPanic = new QPushButton(T("Dock.Panic"), live_area);
-		bPanic->setStyleSheet(
-			"QPushButton{border:2px solid rgba(255,70,100,220);padding:8px;font-weight:700;}");
+		/* v1.0.1: PANIC is a toggle and shows its live state; the red outline fills while active */
+		bPanic->setCheckable(true);
+		bPanic->setStyleSheet("QPushButton{border:2px solid rgba(255,70,100,220);padding:8px;font-weight:700;}"
+				      "QPushButton:checked{background:rgba(255,60,90,200);color:white;}");
+		bForceOn->setStyleSheet("QPushButton:checked{background:rgba(80,140,255,170);font-weight:700;}");
 		lv->addWidget(bPanic);
 
 		QObject::connect(bForceOff, &QPushButton::pressed, this, [this] { send(PD_CMD_FORCE_OFF); });
@@ -860,9 +932,11 @@ protected:
 	}
 
 	ValueSlider make_slider(QFormLayout *form, QWidget *w, const char *label, const char *help, int lo, int hi,
-				bool percent, std::function<void(struct pl_set &, double)> set, const char *log_name)
+				bool percent, std::function<void(struct pl_set &, double)> set, const char *log_name,
+				double scale = 100.0)
 	{
 		ValueSlider vs;
+		vs.scale = scale;
 		vs.s = new QSlider(Qt::Horizontal, w);
 		vs.s->setRange(lo, hi);
 		vs.v = new QLabel(w);
@@ -1068,6 +1142,15 @@ protected:
 			ns.lock_fade_beats = static_cast<float>(b);
 			commit(ns, -1, QString("lock fade -> %1 beats").arg(b));
 		});
+		/* v1.0.1 audio sensitivity */
+		drGain = make_slider(
+			form, w, "InputGain", "InputGain.Help", -24, 48, false,
+			[](struct pl_set &s, double v) { s.input_gain_db = static_cast<float>(v); }, "input gain dB",
+			2.0);
+		drSens = make_slider(
+			form, w, "KickSensitivity", "KickSensitivity.Help", 0, 100, true,
+			[](struct pl_set &s, double v) { s.kick_sensitivity = static_cast<float>(v); },
+			"kick sensitivity");
 
 		auto *hdr = new QLabel(T("LockBehaviours"), w);
 		QFont hf = hdr->font();
@@ -1085,6 +1168,24 @@ protected:
 		drOffBd = add_check(form, w, "OffOnBreakdown", &pl_set::off_on_breakdown, "off on breakdown");
 		drOffDrop = add_check(form, w, "OffOnDrop", &pl_set::off_on_drop, "off on drop");
 		drDropBars = add_int(form, w, "RawBarsAtDrop", 1, 8, &pl_set::drop_bars, "raw bars at drop");
+		/* v1.0.1 drop colour cycle */
+		drCycle = add_check(form, w, "DropCycle", &pl_set::drop_cycle, "drop cycle");
+		form->addRow(help_label("DropCycle.Help", w));
+		drCycleChance = make_slider(
+			form, w, "DropCycleChance", "DropCycleChance.Help", 0, 100, true,
+			[](struct pl_set &s, double v) { s.drop_cycle_chance = static_cast<float>(v); },
+			"drop cycle chance");
+		drCycleBars = add_int(form, w, "DropCycleBars", 1, 4, &pl_set::drop_cycle_bars, "drop cycle bars");
+		drCycleRate = new QComboBox(w);
+		drCycleRate->addItem(T("DropCycleRate.Quarter"), 1);
+		drCycleRate->addItem(T("DropCycleRate.Eighth"), 2);
+		drCycleRate->addItem(T("DropCycleRate.Sixteenth"), 4);
+		form->addRow(T("DropCycleRate"), drCycleRate);
+		QObject::connect(drCycleRate, &QComboBox::activated, this, [this](int i) {
+			struct pl_set ns = model;
+			ns.drop_cycle_steps_per_beat = drCycleRate->itemData(i).toInt();
+			commit(ns, -1, "drop cycle rate -> " + drCycleRate->itemText(i));
+		});
 		drBreath = make_slider(
 			form, w, "Breathing", "Dock.BreathingHelp", 0, 100, true,
 			[](struct pl_set &s, double v) { s.breathing = static_cast<float>(v); }, "breathing");
@@ -1526,7 +1627,16 @@ private:
 		set_check(drOffDrop, s.off_on_drop);
 		set_spin(drDropBars, s.drop_bars);
 		set_row_visible(drDropBars, s.off_on_drop);
+		set_check(drCycle, s.drop_cycle);
+		set_slider(drCycleChance, s.drop_cycle_chance);
+		set_spin(drCycleBars, s.drop_cycle_bars);
+		set_combo_data(drCycleRate, s.drop_cycle_steps_per_beat);
+		set_row_visible(drCycleChance.s, s.drop_cycle);
+		set_row_visible(drCycleBars, s.drop_cycle);
+		set_row_visible(drCycleRate, s.drop_cycle);
 		set_slider(drBreath, s.breathing);
+		set_slider(drGain, s.input_gain_db);
+		set_slider(drSens, s.kick_sensitivity);
 		set_check(drRotation, s.rotation);
 		set_spin(drSeed, static_cast<int>(s.seed));
 		refresh_audio_list();
@@ -1751,6 +1861,10 @@ private:
 
 	QString next_text(const pd::DirectorState &st, const struct pl_set &set) const
 	{
+		if (st.panic)
+			return T("Dock.NowPanic");
+		if (st.drop_cycle)
+			return T("Dock.NowDropCycle");
 		if (!st.enabled)
 			return T("Dock.NowDirectorOff");
 		if (st.paused)
@@ -1811,7 +1925,13 @@ private:
 			state = "DIRECTOR PAUSED";
 			stc = QColor(255, 170, 40);
 		}
-		if (st.force_off) {
+		if (st.panic) {
+			state = "PANIC";
+			stc = QColor(255, 60, 100);
+		} else if (st.drop_cycle) {
+			state = "DROP CYCLE";
+			stc = QColor(200, 80, 255);
+		} else if (st.force_off) {
 			state = "FORCED OFF";
 			stc = QColor(255, 60, 100);
 		} else if (st.forced_on) {
@@ -1842,9 +1962,25 @@ private:
 						  .arg(T("AudioSource"), QString::fromUtf8(view.audio_name.c_str()),
 						       view.audio_attached ? QString() : QString(" (not found)"), kDot)
 						  .arg(st.cooldown_phrases_left));
+		/* v1.0.1 audio meter */
+		meter->db = st.input_db;
+		meter->clip = st.clip;
+		meter->bass = st.bass_level;
+		meter->thr = st.kick_threshold;
+		meter->silent = st.silent;
+		if (st.kicks != kicks_seen) {
+			kicks_seen = st.kicks;
+			meter->kick_flash = 4; // ~130 ms at 30 Hz
+		} else if (meter->kick_flash > 0) {
+			meter->kick_flash--;
+		}
+		meter->update();
 		bForceOn->setChecked(st.forced_on);
+		bForceOn->setText(st.forced_on ? T("Dock.ForceOnActive") : T("Dock.ForceOn"));
 		bPause->setChecked(st.paused);
 		bPause->setText(st.paused ? T("Dock.Resume") : T("Dock.Pause"));
+		bPanic->setChecked(st.panic);
+		bPanic->setText(st.panic ? T("Dock.PanicActive") : T("Dock.Panic"));
 
 		/* pads: flow grid of up to 16, 2..4 columns by width */
 		const int cols = std::clamp(live_area->width() / 150, 2, 4);
@@ -1863,8 +1999,15 @@ private:
 				pads[i]->show();
 			}
 		}
+		/* drop cycle: flash the live pad on each cut (~100 ms) */
+		if (st.drop_cycle && st.live_palette != cycle_live_seen)
+			cycle_flash = 3;
+		else if (cycle_flash > 0)
+			cycle_flash--;
+		cycle_live_seen = st.drop_cycle ? st.live_palette : -1;
 		for (int i = 0; i < set.n_palettes; i++) {
 			PadWidget *pw = pads[i];
+			pw->flash = cycle_flash > 0;
 			pw->pal = set.palettes[i];
 			pw->live = i == st.live_palette;
 			pw->next = i == st.next_palette && i != st.live_palette;
@@ -1884,8 +2027,12 @@ private:
 						 ? QString::fromUtf8(set.palettes[st.live_palette].name)
 						 : QString("?");
 		QString lockWord = mix > 0.99f ? "lock ON" : (mix < 0.01f ? "lock OFF (raw source)" : "lock fading");
-		if (st.force_off)
+		if (st.panic)
+			lockWord = "lock held ON by PANIC";
+		else if (st.force_off)
 			lockWord = "lock forced OFF";
+		else if (st.forced_on)
+			lockWord = "lock held ON by Force on (press Force on to release)";
 		nowLbl->setText(QString("Live: %1 %2 %3 %2 %4%5")
 					.arg(liveName, kDot, next_text(st, set), lockWord,
 					     is_dirty ? QString(" %1 set has unsaved changes").arg(kDot) : QString()));
@@ -1951,7 +2098,14 @@ private:
 	QSpinBox *drBpm = nullptr, *drBarsMin = nullptr, *drBarsMax = nullptr, *drCool = nullptr, *drDropBars = nullptr,
 		 *drSeed = nullptr;
 	QDoubleSpinBox *drFade = nullptr;
-	ValueSlider drRandChance, drBreath;
+	ValueSlider drRandChance, drBreath, drGain, drSens, drCycleChance;
+	QCheckBox *drCycle = nullptr;
+	QSpinBox *drCycleBars = nullptr;
+	QComboBox *drCycleRate = nullptr;
+	int cycle_live_seen = -1;
+	int cycle_flash = 0;
+	AudioMeter *meter = nullptr;
+	uint32_t kicks_seen = 0;
 	/* log tab */
 	QPlainTextEdit *logText = nullptr;
 	QStringList lines;

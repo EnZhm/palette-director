@@ -688,6 +688,23 @@ extern "C" bool pd_set_parse(const char *json, struct pl_set *out, char *err, si
 	s.breathing = r.real(dir, "breathing", s.breathing, 0.0f, 1.0f);
 	s.rotation = r.boolean(dir, "rotation", s.rotation);
 	s.seed = static_cast<unsigned>(r.integer(dir, "seed", static_cast<int>(s.seed), 0, 99999));
+	/* v1.0.1: optional, so v1.0.0 files load with today's behaviour */
+	s.input_gain_db = r.real(dir, "input_gain_db", s.input_gain_db, -12.0f, 24.0f);
+	s.kick_sensitivity = r.real(dir, "kick_sensitivity", s.kick_sensitivity, 0.0f, 1.0f);
+	/* v1.0.1 drop colour cycle: a missing object = disabled, so older files behave as before */
+	const Value *dc = r.object(dir, "drop_cycle");
+	s.drop_cycle = r.boolean(dc, "enabled", s.drop_cycle);
+	s.drop_cycle_chance = r.real(dc, "chance", s.drop_cycle_chance, 0.0f, 1.0f);
+	s.drop_cycle_bars = r.integer(dc, "bars", s.drop_cycle_bars, 1, 4);
+	const std::string rate = r.string(dc, "rate", "1/8");
+	if (rate == "1/4")
+		s.drop_cycle_steps_per_beat = 1;
+	else if (rate == "1/8")
+		s.drop_cycle_steps_per_beat = 2;
+	else if (rate == "1/16")
+		s.drop_cycle_steps_per_beat = 4;
+	else
+		r.bad("unknown drop_cycle rate '" + rate + "' (1/4, 1/8 or 1/16)");
 
 	if (!r.ok())
 		return set_err(r.err);
@@ -760,6 +777,15 @@ extern "C" char *pd_set_write(const struct pl_set *s)
 	put(dir, "breathing", V_real(s->breathing));
 	put(dir, "rotation", V_bool(s->rotation));
 	put(dir, "seed", V_int(static_cast<long long>(s->seed)));
+	put(dir, "input_gain_db", V_real(s->input_gain_db, true));
+	put(dir, "kick_sensitivity", V_real(s->kick_sensitivity));
+	Value dcv = V_obj();
+	put(dcv, "enabled", V_bool(s->drop_cycle));
+	put(dcv, "chance", V_real(s->drop_cycle_chance));
+	put(dcv, "bars", V_int(s->drop_cycle_bars));
+	put(dcv, "rate",
+	    V_str(s->drop_cycle_steps_per_beat == 1 ? "1/4" : (s->drop_cycle_steps_per_beat == 4 ? "1/16" : "1/8")));
+	put(dir, "drop_cycle", std::move(dcv));
 	put(root, "director", std::move(dir));
 
 	std::string o;

@@ -120,11 +120,17 @@ extern "C" bool pd_sets_path_for(const char *name, char *out, size_t out_len)
 		return false;
 	char slug[PL_NAME_MAX + 8];
 	pd_set_slug(name, slug, sizeof(slug));
+	/* Compose in a std::string and refuse paths that don't fit, instead of snprintf-truncating
+	 * into the caller's buffer: a truncated path would point at the wrong file, and gcc's Release
+	 * -Werror=format-truncation (CI tag builds) rejects the 512 + 71 byte snprintf. */
 #ifdef _WIN32
-	snprintf(out, out_len, "%s\\%s.json", dir, slug);
+	const std::string p = std::string(dir) + "\\" + slug + ".json";
 #else
-	snprintf(out, out_len, "%s/%s.json", dir, slug);
+	const std::string p = std::string(dir) + "/" + slug + ".json";
 #endif
+	if (!out || p.size() >= out_len)
+		return false;
+	memcpy(out, p.c_str(), p.size() + 1);
 	return true;
 }
 

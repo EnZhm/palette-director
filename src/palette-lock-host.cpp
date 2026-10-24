@@ -163,7 +163,7 @@ const char *cmd_name(int c)
 	case PD_CMD_ROTATE_NOW:
 		return "rotate colours now";
 	case PD_CMD_PANIC:
-		return "PANIC";
+		return "PANIC (toggle)";
 	case PD_CMD_TOGGLE_PAUSE:
 		return "pause/resume";
 	}
@@ -221,6 +221,12 @@ pd::SetFile to_setfile(const struct pl_set &s)
 	f.director.breathing = s.breathing;
 	f.director.rotation = s.rotation;
 	f.director.seed = s.seed;
+	f.director.input_gain_db = s.input_gain_db;
+	f.director.kick_sensitivity = s.kick_sensitivity;
+	f.director.drop_cycle = s.drop_cycle;
+	f.director.drop_cycle_chance = s.drop_cycle_chance;
+	f.director.drop_cycle_bars = s.drop_cycle_bars;
+	f.director.drop_cycle_steps_per_beat = s.drop_cycle_steps_per_beat;
 	return f;
 }
 
@@ -351,6 +357,8 @@ static void maintain_audio(pd_host *h, double now)
 		h->channels.store(get_audio_channels(ai->speakers));
 	h->ring.clear();
 	h->audio_weak = obs_source_get_weak_source(src);
+	if (h->dir)
+		h->dir->reset_audio_reference();
 	obs_source_add_audio_capture_callback(src, on_audio, h);
 	blog(LOG_INFO, "[palette-director] '%s': audio capture attached to '%s' (%u Hz, %u ch)",
 	     obs_source_get_name(h->filter), h->audio_name.c_str(), audio_output_get_sample_rate(obs_get_audio()),
@@ -418,6 +426,8 @@ static void worker_main(pd_host *h)
 			if (c->audio != h->audio_name) {
 				h->audio_name = c->audio;
 				h->last_audio_try = -10.0;
+				/* v1.0.1: a new source starts with a fresh level reference */
+				h->dir->reset_audio_reference();
 			}
 			delete c;
 		}
@@ -582,10 +592,12 @@ static void worker_main(pd_host *h)
 						    ? h->set.palettes[st.live_palette].name
 						    : "?";
 			blog(LOG_INFO,
-			     "[palette-director] '%s': status bpm %.1f conf %.2f %s beat %llu phrase %llu live '%s' mix %.2f%s%s%s",
+			     "[palette-director] '%s': status bpm %.1f conf %.2f %s beat %llu phrase %llu live '%s' mix %.2f level %.1f dBFS kicks %u gain %+.1f dB sens %d%%%s%s%s",
 			     obs_source_get_name(h->filter), st.bpm, st.confidence, section_name(st.section),
-			     (unsigned long long)st.beat, (unsigned long long)st.phrase, lname, mix,
-			     st.silent ? " (silent: fallback bpm)" : "", st.paused ? " PAUSED" : "",
+			     (unsigned long long)st.beat, (unsigned long long)st.phrase, lname, mix, st.input_db,
+			     st.kicks, h->set.input_gain_db, (int)lroundf(h->set.kick_sensitivity * 100.0f),
+			     st.silent ? " (silent: fallback bpm)" : "",
+			     st.panic ? " PANIC" : (st.paused ? " PAUSED" : (st.drop_cycle ? " DROP CYCLE" : "")),
 			     h->audio_weak ? "" : " (no audio source)");
 		}
 	}

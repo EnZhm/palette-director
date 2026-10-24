@@ -47,7 +47,26 @@ struct DirectorConfig {
 	uint32_t seed = 7;
 	// Added beyond spec 4.2 (present in the set schema 5.1 and properties 3.4):
 	bool enabled = true;
+	// v1.0.1 audio sensitivity (set-file keys optional on load; defaults = v1.0.0 behaviour)
+	float input_gain_db = 0.0f;    // -12..+24 dB, applied to the mono downmix before analysis
+	float kick_sensitivity = 0.6f; // 0..1 (shown 0-100%); see kick_threshold_for()
+	// v1.0.1 drop colour cycle (lock behaviour): on a drop after a breakdown, maybe hard-cut through
+	// the normal palettes for a few bars, then land on the palette the drop would have picked.
+	bool drop_cycle = false;           // set-file key missing = disabled (old files unchanged)
+	float drop_cycle_chance = 0.5f;    // 0..1
+	int drop_cycle_bars = 1;           // 1..4
+	int drop_cycle_steps_per_beat = 2; // 1 ("1/4"), 2 ("1/8"), 4 ("1/16")
 };
+
+// v1.0.1: kick threshold as a fraction of the adaptive bass reference.
+// sensitivity 0 -> 0.85, 0.6 (default) -> 0.40 (= v1.0.0's fixed 0.4), 1 -> 0.10. Higher = more sensitive.
+inline float kick_threshold_for(float sensitivity)
+{
+	const float s = sensitivity < 0.0f ? 0.0f : (sensitivity > 1.0f ? 1.0f : sensitivity);
+	return 0.85f - 0.75f * s;
+}
+// v1.0.1: input gain in dB (clamped to -12..+24) -> linear amplitude factor.
+float input_gain_linear(float db);
 
 struct SetFile {
 	std::string name;
@@ -77,10 +96,18 @@ struct DirectorState {
 	float beat_frac = 0.0f; // fractional part of the beat clock (beat lights)
 	int next_palette = -1;  // pickNextPreview: next palette the scheduler would pick, -1 if none
 	bool paused = false;    // director paused (Pause / Panic)
+	bool panic = false;     // PANIC latched (v1.0.1 toggle); implies paused + lock held on
 	bool forced_on = false; // Force on toggle
 	bool force_off = false; // Force off (hold)
 	bool enabled = true;    // DirectorConfig::enabled
 	bool silent = true;     // feed is silent (fallback BPM in use)
+	// v1.0.1 audio meter (dock): all after the input gain
+	float input_db = -120.0f;    // peak level, dBFS (fast attack, ~300 ms fall)
+	bool clip = false;           // peak above -1 dBFS within the last ~1.5 s
+	float bass_level = 0.0f;     // bass envelope / adaptive reference (0..1)
+	float kick_threshold = 0.4f; // the kick threshold on the same scale (marker on the bass bar)
+	uint32_t kicks = 0;          // detected kick count (the dock flashes its kick light on change)
+	bool drop_cycle = false;     // v1.0.1: a drop colour cycle is running (lock held on)
 };
 
 // ---- Director decision log (feeds the dock log in P5 and the offline tests) ----
@@ -125,6 +152,8 @@ public:
 	void drain_events(std::vector<Event> &out);
 	// When false, events() keeps no history (long-running host; use drain_events).
 	void set_keep_history(bool keep);
+	// v1.0.1: forget the adaptive bass reference + meters (call when the audio source changes).
+	void reset_audio_reference();
 
 private:
 	struct Impl;

@@ -1,5 +1,7 @@
 # Palette Director
 
+> **This repository is archived. Palette Director now lives in [EnZhm/director](https://github.com/EnZhm/director)** (`plugins/palette-director`), released as part of [Director 2.0.0](https://github.com/EnZhm/director/releases/tag/2.0.0) together with Music Director, Palette Director, Clip Director and Scene Director. Download and install from there. The releases below stay available as history.
+
 Palette Director is an OBS Studio plugin (Windows x64) for VJ sets. It locks a
 Synesthesia (Spout) feed to a set of colour palettes, listens to the DJ mix in OBS, and
 moves through those palettes on drops and phrases; sometimes the lock lets go so the raw
